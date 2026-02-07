@@ -1,5 +1,6 @@
 import type { Task, Project, Assignee, FilterOptions } from './types';
 import initSqlJs from 'sql.js';
+import { base } from '$app/paths';
 
 // SQLite database instance
 let db: any = null;
@@ -40,7 +41,7 @@ export async function initDB(): Promise<void> {
 
 	// Initialize SQL.js with local wasm file
 	SQL = await initSqlJs({
-		locateFile: (file: string) => `/sql-wasm.wasm`
+		locateFile: (file: string) => `${base}/${file}`
 	});
 
 	// Try to load existing database
