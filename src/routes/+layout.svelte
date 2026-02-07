@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { initDB } from '$lib/db';
 	import { onMount } from 'svelte';
-	import { CheckSquare, Sun, Moon } from 'lucide-svelte';
+	import { CheckSquare, Sun, Moon, Github } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme';
 	
 	let loading = true;
@@ -23,7 +23,7 @@
 	}
 </script>
 
-<div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors flex flex-col">
 	{#if loading}
 		<div class="fixed inset-0 bg-white dark:bg-gray-900 flex flex-col items-center justify-center z-50 transition-colors">
 			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
@@ -40,7 +40,7 @@
 				</svg>
 			</div>
 			<p class="text-gray-800 dark:text-gray-200 font-medium mb-2">{error}</p>
-			<button 
+			<button
 				on:click={() => window.location.reload()}
 				class="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
 			>
@@ -67,7 +67,7 @@
 							class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 							title="เปลี่ยนธีม"
 						>
-							{#if $theme === 'dark'}
+							{#if $theme === 'light'}
 								<Sun size={20} />
 							{:else}
 								<Moon size={20} />
@@ -80,9 +80,28 @@
 				</div>
 			</div>
 		</header>
-		
-		<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+		<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
 			<slot />
 		</main>
+
+		<footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 transition-colors">
+			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+				<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						© {new Date().getFullYear()} Khu Phaen. All rights reserved.
+					</p>
+					<a
+						href="https://github.com/watchakorn-18k/khun-phaen-tracker-offline"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary transition-colors flex items-center gap-2"
+					>
+						<Github size={20} class="fill-current" />
+						<span>GitHub</span>
+					</a>
+				</div>
+			</div>
+		</footer>
 	{/if}
 </div>
