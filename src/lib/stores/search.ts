@@ -11,13 +11,12 @@ interface SearchDocument {
 	assignee: string;
 }
 
-// WASM Search Engine instance
-let wasmEngine: any = null;
-let wasmModule: any = null;
+// Search index (pure JS, no WASM)
+let searchIndex: SearchDocument[] = [];
 
 // Loading state
 export const wasmLoading = writable(false);
-export const wasmReady = writable(false);
+export const wasmReady = writable(true); // Always ready (JS mode)
 export const wasmError = writable<string | null>(null);
 
 // Search state
@@ -26,35 +25,45 @@ export const searchResults = writable<Task[]>([]);
 export const searchSuggestions = writable<string[]>([]);
 export const isSearching = writable(false);
 
-// Initialize WASM module
+// Initialize search (JS only, no WASM)
 export async function initWasmSearch() {
-	if (wasmReady.get() || wasmLoading.get()) return;
+	console.log('🔍 Search using JavaScript (WASM disabled for memory)');
+	wasmReady.set(true);
+}
+
+// Simple fuzzy matching function
+function fuzzyMatch(text: string, query: string): number {
+	if (!query) return 1;
+	text = text.toLowerCase();
+	query = query.toLowerCase();
 	
-	wasmLoading.set(true);
-	wasmError.set(null);
+	// Exact match gets highest score
+	if (text === query) return 100;
 	
-	try {
-		// Dynamic import of WASM module
-		const wasm = await import('../../../static/wasm/wasm_search.js');
-		await wasm.default();
-		wasmModule = wasm;
-		wasmEngine = new wasm.SearchEngine();
-		
-		wasmReady.set(true);
-		console.log('WASM Search Engine initialized');
-	} catch (error) {
-		console.error('Failed to load WASM:', error);
-		wasmError.set('ไม่สามารถโหลด WASM Search Engine ได้');
-	} finally {
-		wasmLoading.set(false);
+	// Starts with query
+	if (text.startsWith(query)) return 80;
+	
+	// Contains query
+	if (text.includes(query)) return 60;
+	
+	// Check if all characters in query appear in text in order (fuzzy)
+	let queryIdx = 0;
+	for (let i = 0; i < text.length && queryIdx < query.length; i++) {
+		if (text[i] === query[queryIdx]) {
+			queryIdx++;
+		}
 	}
+	if (queryIdx === query.length) {
+		// Fuzzy match - calculate score based on length ratio
+		return Math.max(10, 40 * (query.length / text.length));
+	}
+	
+	return 0;
 }
 
 // Index tasks for searching
 export function indexTasks(tasks: Task[]) {
-	if (!wasmEngine) return;
-	
-	const documents: SearchDocument[] = tasks.map(task => ({
+	searchIndex = tasks.map(task => ({
 		id: task.id || 0,
 		title: task.title,
 		project: task.project || '',
@@ -63,86 +72,70 @@ export function indexTasks(tasks: Task[]) {
 		status: task.status,
 		assignee: task.assignee?.name || ''
 	}));
-	
-	try {
-		wasmEngine.index_documents(documents);
-		console.log(`Indexed ${documents.length} tasks`);
-	} catch (error) {
-		console.error('Failed to index tasks:', error);
-	}
+	console.log(`Indexed ${searchIndex.length} tasks (JS mode)`);
 }
 
 // Perform search
 export function performSearch(query: string, allTasks: Task[]) {
-	if (!wasmEngine || !query.trim()) {
+	if (!query.trim()) {
 		searchResults.set(allTasks);
 		return allTasks;
 	}
 	
 	isSearching.set(true);
 	
-	try {
-		const results = wasmEngine.search(query, 100);
-		const resultIds = new Set(results.map((r: SearchDocument) => r.id));
-		
-		// Map back to full Task objects
-		const matchedTasks = allTasks.filter(task => 
-			task.id && resultIds.has(task.id)
-		);
-		
-		// Sort by search result order
-		const orderedTasks: Task[] = [];
-		for (const result of results) {
-			const task = allTasks.find(t => t.id === result.id);
-			if (task) orderedTasks.push(task);
-		}
-		
-		searchResults.set(orderedTasks);
-		isSearching.set(false);
-		return orderedTasks;
-	} catch (error) {
-		console.error('Search error:', error);
-		searchResults.set(allTasks);
-		isSearching.set(false);
-		return allTasks;
-	}
-}
-
-// Get search suggestions
-export function getSuggestions(partial: string) {
-	if (!wasmEngine || partial.length < 2) {
-		searchSuggestions.set([]);
-		return;
-	}
+	const queryStr = query.toLowerCase().trim();
 	
-	try {
-		const suggestions = wasmEngine.suggest(partial, 10);
-		searchSuggestions.set(suggestions);
-	} catch (error) {
-		console.error('Suggestion error:', error);
-		searchSuggestions.set([]);
-	}
+	// Score and filter tasks
+	const scored = allTasks.map(task => {
+		const doc = searchIndex.find(d => d.id === task.id);
+		if (!doc) return { task, score: 0 };
+		
+		let score = 0;
+		score = Math.max(score, fuzzyMatch(doc.title, queryStr) * 2); // Title weighted more
+		score = Math.max(score, fuzzyMatch(doc.project, queryStr));
+		score = Math.max(score, fuzzyMatch(doc.category, queryStr));
+		score = Math.max(score, fuzzyMatch(doc.notes, queryStr));
+		score = Math.max(score, fuzzyMatch(doc.assignee, queryStr));
+		
+		return { task, score };
+	});
+	
+	// Filter and sort by score
+	const results = scored
+		.filter(item => item.score > 0)
+		.sort((a, b) => b.score - a.score)
+		.map(item => item.task);
+	
+	searchResults.set(results);
+	
+	// Generate suggestions from matching titles
+	const suggestions = searchIndex
+		.filter(d => fuzzyMatch(d.title, queryStr) > 50)
+		.map(d => d.title)
+		.slice(0, 5);
+	searchSuggestions.set(suggestions);
+	
+	isSearching.set(false);
+	return results;
 }
 
 // Clear search
-export function clearSearch() {
+export function clearSearch(allTasks: Task[]) {
 	searchQuery.set('');
-	searchResults.set([]);
+	searchResults.set(allTasks);
 	searchSuggestions.set([]);
+	return allTasks;
 }
 
-// Derived store for filtered tasks based on search
-export function createFilteredTasksStore(tasksStore: ReturnType<typeof writable<Task[]>>) {
-	return derived(
-		[tasksStore, searchQuery, wasmReady],
-		([$tasks, $query, $wasmReady]) => {
-			if (!$wasmReady || !$query.trim()) {
-				return $tasks;
-			}
-			
-			// Trigger search and return results
-			performSearch($query, $tasks);
-			return get(searchResults);
-		}
-	);
+// Get search suggestions (for autocomplete)
+export function getSearchSuggestions(query: string): string[] {
+	if (!query.trim()) return [];
+	
+	const queryStr = query.toLowerCase().trim();
+	
+	return searchIndex
+		.filter(d => fuzzyMatch(d.title, queryStr) > 40)
+		.map(d => d.title)
+		.slice(0, 5);
 }

@@ -2,16 +2,18 @@ import type { Task, Project, Assignee, FilterOptions } from './types';
 import initSqlJs from 'sql.js';
 import { base } from '$app/paths';
 import { getItem, setItem, initCompression, compressionReady } from './stores/storage';
+import { get } from 'svelte/store';
 
 // SQLite database instance
 let db: any = null;
 let SQL: any = null;
+let isInitializing = false;
 
 const DB_NAME = 'task-tracker-db';
 
-// Initialize compression on module load
+// Initialize compression on module load (JS only, no WASM)
 if (typeof window !== 'undefined') {
-	initCompression();
+	initCompression(); // JS compression, no delay needed
 }
 
 function loadDatabase(): Uint8Array | null {
@@ -39,7 +41,7 @@ function saveDatabase() {
 		setItem(DB_NAME, btoa(binaryString));
 		
 		// Log compression status
-		if (compressionReady.get()) {
+		if (get(compressionReady)) {
 			console.log('💾 Database saved with compression');
 		}
 	} catch (e) {
@@ -48,26 +50,83 @@ function saveDatabase() {
 }
 
 export async function initDB(): Promise<void> {
-	if (db) return;
-
-	// Initialize SQL.js with local wasm file
-	SQL = await initSqlJs({
-		locateFile: (file: string) => `${base}/${file}`
-	});
-
-	// Try to load existing database
-	const existingData = loadDatabase();
-	if (existingData) {
-		db = new SQL.Database(existingData);
-	} else {
-		db = new SQL.Database();
+	// Prevent double initialization
+	if (db || isInitializing) {
+		if (isInitializing) {
+			// Wait for initialization to complete
+			while (isInitializing) {
+				await new Promise(r => setTimeout(r, 50));
+			}
+		}
+		return;
 	}
-
-	// Create tables
-	createTables();
 	
-	// Save initial state
-	saveDatabase();
+	isInitializing = true;
+	console.log('🗄️ Initializing database...');
+
+	try {
+		// Initialize SQL.js with local wasm file
+		console.log('📦 Loading SQL.js WASM...');
+		SQL = await initSqlJs({
+			locateFile: (file: string) => `${base}/${file}`
+		});
+		console.log('✅ SQL.js loaded');
+
+		// Try to load existing database
+		const existingData = loadDatabase();
+		if (existingData) {
+			db = new SQL.Database(existingData);
+			console.log('📂 Loaded existing database');
+		} else {
+			db = new SQL.Database();
+			console.log('📂 Created new database');
+		}
+
+		// Create tables
+		createTables();
+		
+		// Save initial state
+		saveDatabase();
+		
+		console.log('✅ Database initialized');
+	} catch (error) {
+		console.error('❌ Failed to initialize database:', error);
+		// Try to recover by clearing and starting fresh
+		try {
+			localStorage.removeItem(DB_NAME);
+			if (SQL) {
+				db = new SQL.Database();
+				createTables();
+				saveDatabase();
+				console.log('⚠️ Recovered with fresh database');
+			}
+		} catch (recoveryError) {
+			console.error('❌ Recovery failed:', recoveryError);
+			throw recoveryError;
+		}
+	} finally {
+		isInitializing = false;
+	}
+}
+
+// Cleanup database before refresh/unload
+export function cleanupDB() {
+	if (db) {
+		try {
+			saveDatabase();
+			db.close();
+			db = null;
+			SQL = null;
+			console.log('🧹 Database cleaned up');
+		} catch (e) {
+			console.warn('Cleanup error:', e);
+		}
+	}
+}
+
+// Register cleanup on page unload
+if (typeof window !== 'undefined') {
+	window.addEventListener('beforeunload', cleanupDB);
 }
 
 function createTables() {
@@ -587,44 +646,107 @@ export async function exportToCSV(): Promise<string> {
 	return csvRows.join('\n');
 }
 
-export async function importFromCSV(csvContent: string): Promise<number> {
+export async function importFromCSV(csvContent: string, options: { clearExisting?: boolean } = {}): Promise<number> {
 	if (!db) throw new Error('DB not initialized');
 	
 	const lines = csvContent.trim().split('\n');
-	if (lines.length < 2) return 0;
-	
-	const headers = lines[0].split(',').map(h => h.trim());
-	let imported = 0;
-	
-	for (let i = 1; i < lines.length; i++) {
-		const values = parseCSVLine(lines[i]);
-		if (values.length !== headers.length) continue;
-		
-		const row: Record<string, string> = {};
-		headers.forEach((h, idx) => row[h] = values[idx]);
-		
-		try {
-			db.run(`
-				INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			`, [
-				row.title || '',
-				row.project || '',
-				parseInt(row.duration_minutes) || 0,
-				row.date || new Date().toISOString().split('T')[0],
-				row.status || 'todo',
-				row.category || 'อื่นๆ',
-				row.notes || '',
-				row.assignee_id ? parseInt(row.assignee_id) : null
-			]);
-			imported++;
-		} catch (e) {
-			console.error('Failed to import row:', row, e);
-		}
+	if (lines.length < 2) {
+		console.warn('CSV has less than 2 lines (headers + data)');
+		return 0;
 	}
 	
-	saveDatabase();
-	return imported;
+	const headers = lines[0].split(',').map(h => h.trim());
+	console.log('📄 CSV Headers:', headers);
+	
+	// Validate required headers
+	const requiredHeaders = ['title', 'project', 'date'];
+	const hasRequired = requiredHeaders.every(h => headers.includes(h));
+	if (!hasRequired) {
+		console.error('❌ CSV missing required headers. Found:', headers);
+		throw new Error(`CSV ไม่ถูกต้อง: ต้องมีคอลัมน์ ${requiredHeaders.join(', ')}`);
+	}
+	
+	// Start transaction
+	try {
+		db.run('BEGIN TRANSACTION');
+		
+		// Clear existing tasks if requested (for sync)
+		if (options.clearExisting !== false) {
+			console.log('🗑️ Clearing existing tasks...');
+			db.run('DELETE FROM tasks');
+		}
+		
+		let imported = 0;
+		let errors = 0;
+		
+		for (let i = 1; i < lines.length; i++) {
+			const line = lines[i].trim();
+			if (!line) continue; // Skip empty lines
+			
+			const values = parseCSVLine(line);
+			if (values.length !== headers.length) {
+				console.warn(`⚠️ Line ${i + 1} has ${values.length} values, expected ${headers.length}`);
+				errors++;
+				continue;
+			}
+			
+			const row: Record<string, string> = {};
+			headers.forEach((h, idx) => row[h] = values[idx]);
+			
+			try {
+				// Use REPLACE INTO to handle duplicate IDs
+				if (row.id) {
+					db.run(`
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					`, [
+						parseInt(row.id),
+						row.title || '',
+						row.project || '',
+						parseInt(row.duration_minutes) || 0,
+						row.date || new Date().toISOString().split('T')[0],
+						row.status || 'todo',
+						row.category || 'อื่นๆ',
+						row.notes || '',
+						row.assignee_id ? parseInt(row.assignee_id) : null,
+						row.created_at || new Date().toISOString()
+					]);
+				} else {
+					db.run(`
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+					`, [
+						row.title || '',
+						row.project || '',
+						parseInt(row.duration_minutes) || 0,
+						row.date || new Date().toISOString().split('T')[0],
+						row.status || 'todo',
+						row.category || 'อื่นๆ',
+						row.notes || '',
+						row.assignee_id ? parseInt(row.assignee_id) : null
+					]);
+				}
+				imported++;
+			} catch (e) {
+				console.error('❌ Failed to import row:', row, e);
+				errors++;
+			}
+		}
+		
+		db.run('COMMIT');
+		console.log(`✅ Imported ${imported} tasks (${errors} errors)`);
+		
+		saveDatabase();
+		return imported;
+	} catch (e) {
+		console.error('❌ Import failed, rolling back:', e);
+		try {
+			db.run('ROLLBACK');
+		} catch (rollbackErr) {
+			console.error('Rollback failed:', rollbackErr);
+		}
+		throw e;
+	}
 }
 
 function parseCSVLine(line: string): string[] {

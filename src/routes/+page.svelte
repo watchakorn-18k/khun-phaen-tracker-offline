@@ -14,7 +14,10 @@
 	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
+	import { enableAutoImport, syncDocumentToServer, serverRoomCode } from '$lib/stores/server-sync';
+	import { get } from 'svelte/store';
 	import { Zap } from 'lucide-svelte';
+	import ServerSyncPanel from '$lib/components/ServerSyncPanel.svelte';
 	
 	let tasks: Task[] = [];
 	let filteredTasks: Task[] = [];
@@ -47,9 +50,13 @@
 	let messageType: 'success' | 'error' = 'success';
 	
 	onMount(() => {
-		loadData();
-		// Initialize WASM search
-		initWasmSearch();
+		// Enable auto-import for server sync (before any connection)
+		enableAutoImport();
+		
+		// Load data (SQL.js only, WASM search/compression disabled for memory)
+		loadData().then(() => {
+			initWasmSearch(); // JS search, no delay needed
+		});
 	});
 	
 	async function loadData() {
@@ -170,6 +177,18 @@
 		setTimeout(() => message = '', 3000);
 	}
 	
+	// Auto-sync to server when connected
+	async function autoSync() {
+		if (get(serverRoomCode)) {
+			console.log('🔄 Auto-syncing to server...');
+			try {
+				await syncDocumentToServer();
+			} catch (e) {
+				console.error('Auto-sync failed:', e);
+			}
+		}
+	}
+	
 	async function handleAddTask(event: CustomEvent<Omit<Task, 'id' | 'created_at'>>) {
 		try {
 			if (editingTask) {
@@ -182,6 +201,8 @@
 			}
 			await loadData();
 			showForm = false;
+			// Auto-sync to server if connected
+			await autoSync();
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -204,6 +225,8 @@
 			await deleteTask(id);
 			await loadData();
 			showMessage('ลบงานสำเร็จ');
+			// Auto-sync to server if connected
+			await autoSync();
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -223,6 +246,8 @@
 		try {
 			await updateTask(event.detail.id, { status: event.detail.status });
 			await loadData();
+			// Auto-sync to server if connected
+			await autoSync();
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -501,6 +526,20 @@
 				on:exportCSV={handleExportCSV}
 				on:exportPDF={handleExportPDF}
 				on:importCSV={handleImportCSV}
+			/>
+			
+			<!-- Sync Panel -->
+			<!-- Server Sync Panel -->
+			<ServerSyncPanel 
+				on:dataImported={async (e) => {
+					console.log('🔄 Data imported from sync, reloading...');
+					await loadData();
+					showMessage(`ซิงค์สำเร็จ ${e.detail.count} รายการ`);
+				}}
+				on:error={(e) => {
+					console.error('Sync error:', e.detail.message);
+					showMessage('ซิงค์ล้มเหลว: ' + e.detail.message);
+				}}
 			/>
 		</div>
 	</div>

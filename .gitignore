@@ -25,6 +25,7 @@ vite.config.ts.timestamp-*
 # Rust / WASM
 wasm-*/target/
 wasm-*/Cargo.lock
+wasm-*/pkg/
 *.rs.bk
 
 # IDE
