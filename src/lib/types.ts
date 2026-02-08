@@ -25,7 +25,7 @@ export interface Task {
 	created_at?: string;
 }
 
-export type ViewMode = 'list' | 'calendar' | 'kanban';
+export type ViewMode = 'list' | 'calendar' | 'kanban' | 'table';
 
 export interface FilterOptions {
 	startDate?: string;

@@ -6,11 +6,12 @@
 	import TaskList from '$lib/components/TaskList.svelte';
 	import CalendarView from '$lib/components/CalendarView.svelte';
 	import KanbanBoard from '$lib/components/KanbanBoard.svelte';
+	import TableView from '$lib/components/TableView.svelte';
 	import StatsPanel from '$lib/components/StatsPanel.svelte';
 	import ExportImport from '$lib/components/ExportImport.svelte';
 	import WorkerManager from '$lib/components/WorkerManager.svelte';
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
-	import { List, CalendarDays, Columns3, Filter, Search, Plus, Users, Folder } from 'lucide-svelte';
+	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder } from 'lucide-svelte';
 	import { jsPDF } from 'jspdf';
 	
 	let tasks: Task[] = [];
@@ -292,76 +293,82 @@
 	<StatsPanel {stats} />
 	
 	<!-- Controls -->
-	<div class="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-		<!-- View Tabs -->
-		<div class="flex p-1 bg-gray-100 dark:bg-gray-800 rounded-lg transition-colors">
+	<div class="flex flex-wrap gap-2">
+		<!-- Filter Toggle -->
+		<button
+			on:click={() => showFilters = !showFilters}
+			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors {showFilters ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+		>
+			<Filter size={16} />
+			<span class="hidden sm:inline">ตัวกรอง</span>
+		</button>
+
+		<!-- Worker Management -->
+		<button
+			on:click={() => showWorkerManager = true}
+			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+		>
+			<Users size={16} />
+			<span class="hidden sm:inline">ทีมงาน</span>
+		</button>
+
+		<!-- Project Management -->
+		<button
+			on:click={() => showProjectManager = true}
+			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+		>
+			<Folder size={16} />
+			<span class="hidden sm:inline">โปรเจค</span>
+		</button>
+		
+		<ExportImport
+			on:exportCSV={handleExportCSV}
+			on:exportPDF={handleExportPDF}
+			on:importCSV={handleImportCSV}
+		/>
+	</div>
+
+	<!-- View Tabs -->
+	<div class="flex flex-col sm:flex-row gap-2">
+		<div class="flex-1 flex p-1 bg-gray-100 dark:bg-gray-800 rounded-lg transition-colors">
 			<button
 				on:click={() => currentView = 'list'}
-				class="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'list' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'list' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
 			>
 				<List size={16} />
 				<span class="hidden sm:inline">รายการ</span>
 			</button>
 			<button
 				on:click={() => currentView = 'calendar'}
-				class="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'calendar' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'calendar' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
 			>
 				<CalendarDays size={16} />
 				<span class="hidden sm:inline">ปฏิทิน</span>
 			</button>
 			<button
 				on:click={() => currentView = 'kanban'}
-				class="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'kanban' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'kanban' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
 			>
 				<Columns3 size={16} />
 				<span class="hidden sm:inline">Kanban</span>
 			</button>
-		</div>
-
-		<div class="flex flex-wrap gap-2">
-			<!-- Filter Toggle -->
 			<button
-				on:click={() => showFilters = !showFilters}
-				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors {showFilters ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+				on:click={() => currentView = 'table'}
+				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'table' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
 			>
-				<Filter size={16} />
-				<span class="hidden sm:inline">ตัวกรอง</span>
-			</button>
-
-			<!-- Worker Management -->
-			<button
-				on:click={() => showWorkerManager = true}
-				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
-			>
-				<Users size={16} />
-				<span class="hidden sm:inline">ทีมงาน</span>
-			</button>
-
-			<!-- Project Management -->
-			<button
-				on:click={() => showProjectManager = true}
-				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
-			>
-				<Folder size={16} />
-				<span class="hidden sm:inline">โปรเจค</span>
-			</button>
-			
-			<ExportImport
-				on:exportCSV={handleExportCSV}
-				on:exportPDF={handleExportPDF}
-				on:importCSV={handleImportCSV}
-			/>
-			
-			<button
-				on:click={() => { showForm = !showForm; editingTask = null; }}
-				class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors"
-			>
-				<Plus size={18} />
-				<span class="hidden sm:inline">เพิ่มงาน</span>
+				<Table size={16} />
+				<span class="hidden sm:inline">ตาราง</span>
 			</button>
 		</div>
+		
+		<button
+			on:click={() => { showForm = !showForm; editingTask = null; }}
+			class="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors sm:w-auto w-full"
+		>
+			<Plus size={18} />
+			<span class="hidden sm:inline">เพิ่มงาน</span>
+		</button>
 	</div>
-	
 	<!-- Filters Panel -->
 	{#if showFilters}
 		<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 space-y-4 transition-colors">
@@ -461,16 +468,15 @@
 	{/if}
 	
 	<!-- Task Form -->
-	{#if showForm}
-		<TaskForm
-			{editingTask}
-			{assignees}
-			projects={projectList}
-			on:submit={handleAddTask}
-			on:cancel={cancelEdit}
-			on:addAssignee={handleAddAssignee}
-		/>
-	{/if}
+	<TaskForm
+		show={showForm}
+		{editingTask}
+		{assignees}
+		projects={projectList}
+		on:submit={handleAddTask}
+		on:close={cancelEdit}
+		on:addAssignee={handleAddAssignee}
+	/>
 	
 	<!-- Views -->
 	<div class="mt-6">
@@ -492,6 +498,13 @@
 				on:move={handleKanbanMove}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
+			/>
+		{:else if currentView === 'table'}
+			<TableView
+				{tasks}
+				on:edit={handleEditTask}
+				on:delete={handleDeleteTask}
+				on:statusChange={handleStatusChange}
 			/>
 		{/if}
 	</div>

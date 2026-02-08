@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Download, Upload, FileSpreadsheet, FileText } from 'lucide-svelte';
+	import { Download, Upload, FileSpreadsheet, FileText, ChevronDown } from 'lucide-svelte';
+	import { onMount, onDestroy } from 'svelte';
 	
 	const dispatch = createEventDispatcher<{
 		exportCSV: void;
@@ -12,6 +13,8 @@
 	let showImportConfirm = false;
 	let importContent = '';
 	let importError = '';
+	let showExportDropdown = false;
+	let dropdownRef: HTMLDivElement;
 	
 	function handleFileSelect(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -44,26 +47,63 @@
 		importContent = '';
 		if (fileInput) fileInput.value = '';
 	}
+
+	function handleExportCSV() {
+		dispatch('exportCSV');
+		showExportDropdown = false;
+	}
+
+	function handleExportPDF() {
+		dispatch('exportPDF');
+		showExportDropdown = false;
+	}
+
+	function handleClickOutside(event: MouseEvent) {
+		if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
+			showExportDropdown = false;
+		}
+	}
+
+	onMount(() => {
+		document.addEventListener('click', handleClickOutside);
+	});
+
+	onDestroy(() => {
+		document.removeEventListener('click', handleClickOutside);
+	});
 </script>
 
 <div class="flex flex-wrap gap-2">
-	<button
-		on:click={() => dispatch('exportCSV')}
-		class="flex items-center gap-2 px-4 py-2 bg-success/10 hover:bg-success/20 text-success rounded-lg font-medium transition-colors"
-	>
-		<FileSpreadsheet size={18} />
-		<span class="hidden sm:inline">ส่งออก CSV</span>
-		<span class="sm:hidden">CSV</span>
-	</button>
+	<!-- Export Dropdown -->
+	<div class="relative" bind:this={dropdownRef}>
+		<button
+			on:click|stopPropagation={() => showExportDropdown = !showExportDropdown}
+			class="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-success/10 hover:bg-success/20 text-success rounded-lg font-medium transition-colors"
+		>
+			<Download size={18} />
+			<span class="hidden sm:inline">ส่งออก</span>
+			<ChevronDown size={16} class="transition-transform {showExportDropdown ? 'rotate-180' : ''}" />
+		</button>
 
-	<button
-		on:click={() => dispatch('exportPDF')}
-		class="flex items-center gap-2 px-4 py-2 bg-danger/10 hover:bg-danger/20 text-danger rounded-lg font-medium transition-colors"
-	>
-		<FileText size={18} />
-		<span class="hidden sm:inline">ส่งออก PDF</span>
-		<span class="sm:hidden">PDF</span>
-	</button>
+		{#if showExportDropdown}
+			<div class="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px] z-20 animate-fade-in">
+				<button
+					on:click={handleExportCSV}
+					class="w-full flex items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				>
+					<FileSpreadsheet size={16} class="text-green-600" />
+					ส่งออก CSV
+				</button>
+				<button
+					on:click={handleExportPDF}
+					class="w-full flex items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				>
+					<FileText size={16} class="text-red-600" />
+					ส่งออก PDF
+				</button>
+			</div>
+		{/if}
+	</div>
 
 	<input
 		type="file"
@@ -75,7 +115,7 @@
 
 	<button
 		on:click={() => fileInput?.click()}
-		class="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg font-medium transition-colors"
+		class="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg font-medium transition-colors"
 	>
 		<Upload size={18} />
 		<span class="hidden sm:inline">นำเข้า CSV</span>
@@ -114,3 +154,20 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.animate-fade-in {
+		animation: fade-in 0.15s ease-out;
+	}
+</style>
