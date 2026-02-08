@@ -12,7 +12,6 @@
 	import WorkerManager from '$lib/components/WorkerManager.svelte';
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
 	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder } from 'lucide-svelte';
-	import { jsPDF } from 'jspdf';
 	
 	let tasks: Task[] = [];
 	let categories: string[] = [];
@@ -196,7 +195,9 @@
 	async function handleExportCSV() {
 		try {
 			const csv = await exportToCSV();
-			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+			// Add BOM for UTF-8 support in Excel
+			const BOM = '\uFEFF';
+			const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
 			link.setAttribute('href', url);
@@ -212,36 +213,137 @@
 	
 	function handleExportPDF() {
 		try {
-			const doc = new jsPDF();
-			doc.setFont('helvetica');
-			doc.setFontSize(18);
-			doc.text('Task Report', 14, 20);
+			// Create HTML content for PDF with Thai font support
+			const htmlContent = `
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<meta charset="UTF-8">
+					<style>
+						@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap');
+						* { margin: 0; padding: 0; box-sizing: border-box; }
+						body { 
+							font-family: 'Noto Sans Thai', sans-serif; 
+							padding: 40px; 
+							font-size: 12px;
+							line-height: 1.6;
+						}
+						.header { margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+						.header h1 { font-size: 24px; font-weight: 700; margin-bottom: 10px; }
+						.header .meta { color: #666; font-size: 11px; }
+						.stats { display: flex; gap: 30px; margin-bottom: 20px; font-size: 11px; }
+						.stats .stat { background: #f5f5f5; padding: 10px 15px; border-radius: 5px; }
+						.stats .stat-label { color: #666; font-size: 10px; }
+						.stats .stat-value { font-weight: 600; font-size: 14px; }
+						table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+						th, td { 
+							border: 1px solid #ddd; 
+							padding: 10px; 
+							text-align: left; 
+							font-size: 11px;
+						}
+						th { background: #f5f5f5; font-weight: 600; }
+						tr:nth-child(even) { background: #fafafa; }
+						.status { 
+							display: inline-block; 
+							padding: 3px 8px; 
+							border-radius: 3px; 
+							font-size: 10px;
+							font-weight: 600;
+						}
+						.status-done { background: #dcfce7; color: #166534; }
+						.status-in-progress { background: #dbeafe; color: #1e40af; }
+						.status-todo { background: #f3f4f6; color: #374151; }
+						.footer { margin-top: 30px; text-align: center; color: #999; font-size: 10px; }
+					</style>
+				</head>
+				<body>
+					<div class="header">
+						<h1>รายงานงาน (Task Report)</h1>
+						<div class="meta">
+							สร้างเมื่อ: ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}<br>
+							ระบบ: Khu Phaen Task Tracker
+						</div>
+					</div>
+					
+					<div class="stats">
+						<div class="stat">
+							<div class="stat-label">จำนวนงานทั้งหมด</div>
+							<div class="stat-value">${stats.total} งาน</div>
+						</div>
+						<div class="stat">
+							<div class="stat-label">เวลารวม</div>
+							<div class="stat-value">${(stats.total_minutes / 60).toFixed(1)} ชั่วโมง</div>
+						</div>
+						<div class="stat">
+							<div class="stat-label">Man-days</div>
+							<div class="stat-value">${(stats.total_minutes / 60 / 8).toFixed(2)} วัน</div>
+						</div>
+					</div>
+					
+					<table>
+						<thead>
+							<tr>
+								<th style="width: 5%">#</th>
+								<th style="width: 35%">ชื่องาน</th>
+								<th style="width: 15%">โปรเจค</th>
+								<th style="width: 12%">หมวดหมู่</th>
+								<th style="width: 10%">สถานะ</th>
+								<th style="width: 13%">วันที่</th>
+								<th style="width: 10%">เวลา</th>
+							</tr>
+						</thead>
+						<tbody>
+							${tasks.map((task, i) => {
+								const statusClass = task.status === 'done' ? 'status-done' : 
+													task.status === 'in-progress' ? 'status-in-progress' : 'status-todo';
+								const statusText = task.status === 'done' ? 'เสร็จแล้ว' : 
+													task.status === 'in-progress' ? 'กำลังทำ' : 'รอดำเนินการ';
+								const hours = Math.floor(task.duration_minutes / 60);
+								const mins = task.duration_minutes % 60;
+								const timeStr = task.duration_minutes > 0 ? 
+									(hours > 0 ? `${hours}ชม ` : '') + (mins > 0 ? `${mins}น` : '') : '-';
+								return `
+								<tr>
+									<td>${i + 1}</td>
+									<td>${task.title}</td>
+									<td>${task.project || '-'}</td>
+									<td>${task.category || 'อื่นๆ'}</td>
+									<td><span class="status ${statusClass}">${statusText}</span></td>
+									<td>${new Date(task.date).toLocaleDateString('th-TH')}</td>
+									<td>${timeStr}</td>
+								</tr>
+								`;
+							}).join('')}
+						</tbody>
+					</table>
+					
+					<div class="footer">
+						© ${new Date().getFullYear()} Khu Phaen Task Tracker - สร้างด้วยความภาคภูมิใจ
+					</div>
+				</body>
+				</html>
+			`;
 			
-			doc.setFontSize(12);
-			doc.text(`Generated: ${new Date().toLocaleDateString('th-TH')}`, 14, 30);
-			doc.text(`Total Tasks: ${stats.total}`, 14, 40);
-			const totalHours = stats.total_minutes / 60;
-			const mandays = totalHours / 8; // 8 ชั่วโมง = 1 man-day
-			doc.text(`Total Time: ${mandays.toFixed(2)} man-days (${Math.floor(stats.total_minutes / 60)}h ${stats.total_minutes % 60}m)`, 14, 48);
-			
-			let y = 60;
-			doc.setFontSize(10);
-			
-			tasks.forEach((task, index) => {
-				if (y > 270) {
-					doc.addPage();
-					y = 20;
-				}
+			// Open print dialog with Thai support
+			const printWindow = window.open('', '_blank');
+			if (printWindow) {
+				printWindow.document.write(htmlContent);
+				printWindow.document.close();
 				
-				const status = task.status === 'done' ? '✓' : task.status === 'in-progress' ? '⟳' : '○';
-				doc.text(`${status} ${task.title}`, 14, y);
-				doc.text(`${task.date} | ${task.category} | ${Math.floor(task.duration_minutes / 60)}h ${task.duration_minutes % 60}m`, 14, y + 5);
-				y += 15;
-			});
-			
-			doc.save(`tasks_${new Date().toISOString().split('T')[0]}.pdf`);
-			showMessage('ส่งออก PDF สำเร็จ');
+				// Wait for font to load then print
+				setTimeout(() => {
+					printWindow.print();
+					// Close window after print (optional)
+					// printWindow.close();
+				}, 1000);
+				
+				showMessage('เปิดหน้าต่างพิมพ์ PDF แล้ว (เลือก "Save as PDF")');
+			} else {
+				showMessage('กรุณาอนุญาตให้เปิดหน้าต่างใหม่', 'error');
+			}
 		} catch (e) {
+			console.error('PDF Export Error:', e);
 			showMessage('เกิดข้อผิดพลาดในการส่งออก', 'error');
 		}
 	}
