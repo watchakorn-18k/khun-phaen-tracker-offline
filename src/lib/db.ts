@@ -776,3 +776,146 @@ function parseCSVLine(line: string): string[] {
 	values.push(current.trim());
 	return values;
 }
+
+// ===== Merge Sync Functions =====
+
+// Merge tasks from server with local tasks (smart merge)
+export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: number; updated: number; unchanged: number }> {
+	if (!db) throw new Error('DB not initialized');
+	
+	const lines = csvContent.trim().split('\n');
+	if (lines.length < 2) {
+		console.warn('CSV has less than 2 lines');
+		return { added: 0, updated: 0, unchanged: 0 };
+	}
+	
+	const headers = lines[0].split(',').map(h => h.trim());
+	
+	// Get all existing tasks for comparison
+	const existingResult = execQuery('SELECT * FROM tasks');
+	const existingTasks = new Map();
+	for (const row of existingResult.values) {
+		const obj = Object.fromEntries(existingResult.columns.map((col, i) => [col, row[i]]));
+		existingTasks.set(obj.id, obj);
+	}
+	
+	console.log(`📊 Local tasks: ${existingTasks.size}, Server tasks: ${lines.length - 1}`);
+	
+	let added = 0;
+	let updated = 0;
+	let unchanged = 0;
+	
+	db.run('BEGIN TRANSACTION');
+	
+	try {
+		for (let i = 1; i < lines.length; i++) {
+			const line = lines[i].trim();
+			if (!line) continue;
+			
+			const values = parseCSVLine(line);
+			if (values.length !== headers.length) continue;
+			
+			const row: Record<string, string> = {};
+			headers.forEach((h, idx) => row[h] = values[idx]);
+			
+			const serverId = row.id ? parseInt(row.id) : null;
+			const existing = serverId ? existingTasks.get(serverId) : null;
+			
+			if (!existing) {
+				// New task - insert
+				try {
+					db.run(`
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+					`, [
+						row.title || '',
+						row.project || '',
+						parseInt(row.duration_minutes) || 0,
+						row.date || new Date().toISOString().split('T')[0],
+						row.status || 'todo',
+						row.category || 'อื่นๆ',
+						row.notes || '',
+						row.assignee_id ? parseInt(row.assignee_id) : null,
+						row.created_at || new Date().toISOString()
+					]);
+					added++;
+				} catch (e) {
+					console.warn('Failed to insert task:', e);
+				}
+			} else {
+				// Compare timestamps to see which is newer
+				const serverDate = new Date(row.created_at || 0).getTime();
+				const localDate = new Date(existing.created_at || 0).getTime();
+				
+				// Check if content is different
+				const isDifferent = 
+					row.title !== existing.title ||
+					row.status !== existing.status ||
+					row.project !== existing.project ||
+					(row.notes || '') !== (existing.notes || '');
+				
+				if (isDifferent && serverDate >= localDate) {
+					// Server version is newer or same age but different - update
+					try {
+						db.run(`
+							UPDATE tasks 
+							SET title = ?, project = ?, duration_minutes = ?, 
+							    date = ?, status = ?, category = ?, notes = ?, 
+							    assignee_id = ?, created_at = ?
+							WHERE id = ?
+						`, [
+							row.title || '',
+							row.project || '',
+							parseInt(row.duration_minutes) || 0,
+							row.date || new Date().toISOString().split('T')[0],
+							row.status || 'todo',
+							row.category || 'อื่นๆ',
+							row.notes || '',
+							row.assignee_id ? parseInt(row.assignee_id) : null,
+							row.created_at || new Date().toISOString(),
+							serverId
+						]);
+						updated++;
+					} catch (e) {
+						console.warn('Failed to update task:', e);
+					}
+				} else {
+					unchanged++;
+				}
+				
+				// Remove from map to track which local tasks don't exist on server
+				existingTasks.delete(serverId);
+			}
+		}
+		
+		db.run('COMMIT');
+		saveDatabase();
+		
+		console.log(`✅ Merge complete: ${added} added, ${updated} updated, ${unchanged} unchanged`);
+		console.log(`📌 Local-only tasks: ${existingTasks.size}`);
+		
+		return { added, updated, unchanged };
+	} catch (e) {
+		db.run('ROLLBACK');
+		throw e;
+	}
+}
+
+// Get task statistics for sync info
+export function getTaskStats(): { total: number; byStatus: Record<string, number>; lastUpdated: string | null } {
+	if (!db) throw new Error('DB not initialized');
+	
+	const totalResult = execQuery('SELECT COUNT(*) as count FROM tasks');
+	const total = totalResult.values[0]?.[0] || 0;
+	
+	const statusResult = execQuery('SELECT status, COUNT(*) as count FROM tasks GROUP BY status');
+	const byStatus: Record<string, number> = {};
+	for (const row of statusResult.values) {
+		byStatus[row[0]] = row[1];
+	}
+	
+	const lastResult = execQuery('SELECT MAX(created_at) as last FROM tasks');
+	const lastUpdated = lastResult.values[0]?.[0] || null;
+	
+	return { total, byStatus, lastUpdated };
+}
