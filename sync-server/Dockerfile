@@ -32,11 +32,11 @@ RUN chown appuser:appuser /usr/local/bin/sync-server
 USER appuser
 
 # Expose port
-EXPOSE 3001
+EXPOSE 3002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD nc -z localhost 3001 || exit 1
+    CMD nc -z localhost 3002 || exit 1
 
 # Run server
 CMD ["sync-server"]
