@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.75-slim AS builder
+FROM docker.io/library/rust:1.75-slim AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY src ./src
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 
 # Install ca-certificates for HTTPS
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
