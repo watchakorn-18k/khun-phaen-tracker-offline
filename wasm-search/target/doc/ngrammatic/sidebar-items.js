@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Pad"],"struct":["Corpus","CorpusBuilder","Ngram","NgramBuilder","SearchResult"]};

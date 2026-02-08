@@ -13,6 +13,8 @@
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
 	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
+	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
+	import { Zap } from 'lucide-svelte';
 	
 	let tasks: Task[] = [];
 	let filteredTasks: Task[] = [];

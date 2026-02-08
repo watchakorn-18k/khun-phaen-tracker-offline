@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { Clock, CheckCircle2, Circle, Loader2, Calendar, Briefcase } from 'lucide-svelte';
+	import { Clock, CheckCircle2, Circle, Loader2, Calendar, Briefcase, Zap } from 'lucide-svelte';
+	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
+	import { onMount } from 'svelte';
 
 	export let stats: {
 		total: number;
@@ -8,6 +10,12 @@
 		done: number;
 		total_minutes: number;
 	} = { total: 0, todo: 0, in_progress: 0, done: 0, total_minutes: 0 };
+
+	let storageInfo = { used: 0, total: 0, percentage: 0 };
+
+	onMount(() => {
+		storageInfo = getStorageInfo();
+	});
 
 	function formatDuration(minutes: number): string {
 		const totalHours = minutes / 60;
@@ -25,9 +33,10 @@
 	}
 
 	$: donePercent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+	$: compressionPercent = $compressionStats.ratio;
 </script>
 
-<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
 	<!-- Total Tasks -->
 	<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
 		<div class="flex items-center justify-between">
@@ -71,6 +80,54 @@
 					<div class="bg-success h-2 rounded-full transition-all" style="width: {donePercent}%"></div>
 				</div>
 				<span class="text-xs text-gray-500 dark:text-gray-400">{donePercent}%</span>
+			</div>
+		{/if}
+	</div>
+
+	<!-- Storage with Compression -->
+	<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+		<div class="flex items-center justify-between">
+			<div>
+				<div class="flex items-center gap-1">
+					<p class="text-sm text-gray-500 dark:text-gray-400 mb-1">พื้นที่จัดเก็บ</p>
+					{#if $compressionReady}
+						<span class="text-xs text-green-600 flex items-center gap-0.5" title="LZ4 Compression Active">
+							<Zap size={10} />
+						</span>
+					{/if}
+				</div>
+				<p class="text-2xl font-bold text-gray-900 dark:text-white">
+					{(storageInfo.used / 1024).toFixed(0)} KB
+				</p>
+			</div>
+			<div class="p-3 {$compressionReady ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-700'} rounded-lg">
+				{#if $compressionReady}
+					<Zap class="text-green-600" size={24} />
+				{:else}
+					<Briefcase class="text-gray-600" size={24} />
+				{/if}
+			</div>
+		</div>
+		{#if $compressionReady && compressionPercent > 0}
+			<div class="mt-2">
+				<div class="flex items-center justify-between text-xs">
+					<span class="text-green-600 dark:text-green-400 font-medium">
+						ประหยัด {compressionPercent.toFixed(0)}%
+					</span>
+					<span class="text-gray-400">LZ4</span>
+				</div>
+				<div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 mt-1">
+					<div class="bg-green-500 h-1.5 rounded-full transition-all" style="width: {compressionPercent}%"></div>
+				</div>
+			</div>
+		{:else}
+			<div class="mt-2">
+				<div class="flex items-center gap-2">
+					<div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+						<div class="bg-gray-400 h-1.5 rounded-full transition-all" style="width: {storageInfo.percentage}%"></div>
+					</div>
+					<span class="text-xs text-gray-500">{storageInfo.percentage.toFixed(0)}%</span>
+				</div>
 			</div>
 		{/if}
 	</div>

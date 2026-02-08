@@ -1,6 +1,7 @@
 import type { Task, Project, Assignee, FilterOptions } from './types';
 import initSqlJs from 'sql.js';
 import { base } from '$app/paths';
+import { getItem, setItem, initCompression, compressionReady } from './stores/storage';
 
 // SQLite database instance
 let db: any = null;
@@ -8,9 +9,14 @@ let SQL: any = null;
 
 const DB_NAME = 'task-tracker-db';
 
+// Initialize compression on module load
+if (typeof window !== 'undefined') {
+	initCompression();
+}
+
 function loadDatabase(): Uint8Array | null {
 	try {
-		const stored = localStorage.getItem(DB_NAME);
+		const stored = getItem(DB_NAME);
 		if (stored) {
 			const binaryString = atob(stored);
 			const bytes = new Uint8Array(binaryString.length);
@@ -30,7 +36,12 @@ function saveDatabase() {
 	try {
 		const data = db.export();
 		const binaryString = String.fromCharCode.apply(null, Array.from(data));
-		localStorage.setItem(DB_NAME, btoa(binaryString));
+		setItem(DB_NAME, btoa(binaryString));
+		
+		// Log compression status
+		if (compressionReady.get()) {
+			console.log('💾 Database saved with compression');
+		}
 	} catch (e) {
 		console.error('Failed to save database:', e);
 	}
