@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="This crate provides fuzzy search/string matching using N-grams."><title>ngrammatic - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="ngrammatic" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate ngrammatic</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../ngrammatic/index.html">ngrammatic</a><span class="version">0.4.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>ngrammatic</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/ngrammatic/lib.rs.html#1-1033">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>This crate provides fuzzy search/string matching using N-grams.</p>
+<p>This implementation is character-based, rather than word based, matching
+solely based on string similarity. It is modelled somewhat after the
+<a href="https://pythonhosted.org/ngram/ngram.html">python ngram module</a> with some inspiration from <a href="http://chappers.github.io/web%20micro%20log/2015/04/29/comparison-of-ngram-fuzzy-matching-approaches/">chappers’ blog post on
+fuzzy matching with ngrams</a>.</p>
+<p>The crate is implemented in three parts: the <code>Corpus</code>, which is an
+index connecting strings (words, symbols, whatever) to their <code>Ngrams</code>,
+and <code>SearchResult</code>s, which contains a fuzzy match result, with the
+word and a similarity measure in the range of 0.0 to 1.0.</p>
+<p>The general usage pattern is to construct a <code>Corpus</code>, <code>.add()</code> your
+list of valid symbols to it, and then perform <code>.search()</code>es of valid,
+unknown, misspelled, etc symbols on the <code>Corpus</code>. The results come
+back as a vector of up to 10 results, sorted from highest similarity
+to lowest.</p>
+<h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>ngrammatic::{CorpusBuilder, Pad};
+
+<span class="kw">let </span><span class="kw-2">mut </span>corpus = CorpusBuilder::new()
+    .arity(<span class="number">2</span>)
+    .pad_full(Pad::Auto)
+    .finish();
+
+<span class="comment">// Build up the list of known words
+</span>corpus.add_text(<span class="string">"pie"</span>);
+corpus.add_text(<span class="string">"animal"</span>);
+corpus.add_text(<span class="string">"tomato"</span>);
+corpus.add_text(<span class="string">"seven"</span>);
+corpus.add_text(<span class="string">"carbon"</span>);
+
+<span class="comment">// Now we can try an unknown/misspelled word, and find a similar match
+// in the corpus
+</span><span class="kw">let </span>results = corpus.search(<span class="string">"tomacco"</span>, <span class="number">0.25</span>);
+<span class="kw">let </span>top_match = results.first();
+
+<span class="macro">assert!</span>(top_match.is_some());
+<span class="macro">assert!</span>(top_match.unwrap().similarity &gt; <span class="number">0.5</span>);
+<span class="macro">assert_eq!</span>(top_match.unwrap().text,String::from(<span class="string">"tomato"</span>));</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Corpus.html" title="struct ngrammatic::Corpus">Corpus</a></dt><dd>Holds a corpus of words and their ngrams, allowing fuzzy matches of
+candidate strings against known strings in the corpus.</dd><dt><a class="struct" href="struct.CorpusBuilder.html" title="struct ngrammatic::CorpusBuilder">Corpus<wbr>Builder</a></dt><dd>Build an Ngram Corpus, one setting at a time.</dd><dt><a class="struct" href="struct.Ngram.html" title="struct ngrammatic::Ngram">Ngram</a></dt><dd>Stores a “word”, with all its n-grams. The “arity” member determines the
+value of “n” used in generating the n-grams.</dd><dt><a class="struct" href="struct.NgramBuilder.html" title="struct ngrammatic::NgramBuilder">Ngram<wbr>Builder</a></dt><dd>Build an <code>Ngram</code>, one setting at a time.</dd><dt><a class="struct" href="struct.SearchResult.html" title="struct ngrammatic::SearchResult">Search<wbr>Result</a></dt><dd>Holds a fuzzy match search result string, and its associated similarity
+to the query text.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Pad.html" title="enum ngrammatic::Pad">Pad</a></dt><dd>Determines how strings are padded before calculating the grams.
+Having some sort of padding is especially important for small words
+Auto pad pre/appends <code>arity</code>-1 space chars
+<a href="http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0107510">Read more about the effect of ngram padding</a></dd></dl></section></div></main></body></html>

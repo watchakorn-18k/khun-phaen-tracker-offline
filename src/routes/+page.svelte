@@ -11,9 +11,11 @@
 	import ExportImport from '$lib/components/ExportImport.svelte';
 	import WorkerManager from '$lib/components/WorkerManager.svelte';
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
-	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder } from 'lucide-svelte';
+	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles } from 'lucide-svelte';
+	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	
 	let tasks: Task[] = [];
+	let filteredTasks: Task[] = [];
 	let categories: string[] = [];
 	let projects: string[] = [];
 	let projectList: Project[] = [];
@@ -27,6 +29,7 @@
 	let showFilters = false;
 	let showWorkerManager = false;
 	let showProjectManager = false;
+	let searchInput = '';
 	
 	let filters: FilterOptions = {
 		startDate: '',
@@ -43,11 +46,26 @@
 	
 	onMount(() => {
 		loadData();
+		// Initialize WASM search
+		initWasmSearch();
 	});
 	
 	async function loadData() {
 		try {
 			tasks = await getTasks(filters);
+			
+			// Index tasks for WASM search
+			if ($wasmReady) {
+				indexTasks(tasks);
+			}
+			
+			// Apply WASM search if there's a search query
+			if ($wasmReady && $searchQuery.trim()) {
+				filteredTasks = performSearch($searchQuery, tasks);
+			} else {
+				filteredTasks = tasks;
+			}
+			
 			stats = await getStats();
 			categories = await getCategories();
 			projects = await getProjects();
@@ -58,6 +76,28 @@
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
 		}
+	}
+	
+	// Handle search input
+	function handleSearchInput(event: Event) {
+		const target = event.target as HTMLInputElement;
+		searchInput = target.value;
+		searchQuery.set(searchInput);
+		
+		if ($wasmReady) {
+			filteredTasks = performSearch(searchInput, tasks);
+		} else {
+			// Fallback to client-side filter
+			filters.search = searchInput;
+			loadData();
+		}
+	}
+	
+	// Clear search
+	function handleClearSearch() {
+		searchInput = '';
+		clearSearch();
+		filteredTasks = tasks;
 	}
 	
 	// Worker Management Functions
@@ -394,41 +434,87 @@
 	<!-- Stats Panel -->
 	<StatsPanel {stats} />
 	
-	<!-- Controls -->
-	<div class="flex flex-wrap gap-2">
-		<!-- Filter Toggle -->
-		<button
-			on:click={() => showFilters = !showFilters}
-			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors {showFilters ? 'bg-gray-100 dark:bg-gray-700' : ''}"
-		>
-			<Filter size={16} />
-			<span class="hidden sm:inline">ตัวกรอง</span>
-		</button>
-
-		<!-- Worker Management -->
-		<button
-			on:click={() => showWorkerManager = true}
-			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
-		>
-			<Users size={16} />
-			<span class="hidden sm:inline">ทีมงาน</span>
-		</button>
-
-		<!-- Project Management -->
-		<button
-			on:click={() => showProjectManager = true}
-			class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
-		>
-			<Folder size={16} />
-			<span class="hidden sm:inline">โปรเจค</span>
-		</button>
+	<!-- Search Bar - Always Visible -->
+	<div class="flex flex-col sm:flex-row gap-3">
+		<div class="flex-1 relative">
+			<Search size={18} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+			<input
+				type="text"
+				value={searchInput}
+				on:input={handleSearchInput}
+				placeholder="🔍 ค้นหางาน... (รองรับภาษาไทย & ค้นหาละเอียด)"
+				class="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white text-base"
+			/>
+			{#if searchInput}
+				<button
+					on:click={handleClearSearch}
+					class="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-full transition-colors text-lg"
+				>
+					×
+				</button>
+			{:else}
+				<span 
+					class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600 flex items-center gap-0.5"
+					title="WASM Full-text Search Active"
+				>
+					{#if $wasmLoading}
+						<span class="text-gray-400">⏳</span>
+					{:else if $wasmReady}
+						<Sparkles size={12} />
+						<span>AI</span>
+					{/if}
+				</span>
+			{/if}
+		</div>
 		
-		<ExportImport
-			on:exportCSV={handleExportCSV}
-			on:exportPDF={handleExportPDF}
-			on:importCSV={handleImportCSV}
-		/>
+		<div class="flex gap-2">
+			<!-- Filter Toggle -->
+			<button
+				on:click={() => showFilters = !showFilters}
+				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors {showFilters ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+			>
+				<Filter size={16} />
+				<span class="hidden sm:inline">ตัวกรอง</span>
+			</button>
+
+			<!-- Worker Management -->
+			<button
+				on:click={() => showWorkerManager = true}
+				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+			>
+				<Users size={16} />
+				<span class="hidden sm:inline">ทีมงาน</span>
+			</button>
+
+			<!-- Project Management -->
+			<button
+				on:click={() => showProjectManager = true}
+				class="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+			>
+				<Folder size={16} />
+				<span class="hidden sm:inline">โปรเจค</span>
+			</button>
+			
+			<ExportImport
+				on:exportCSV={handleExportCSV}
+				on:exportPDF={handleExportPDF}
+				on:importCSV={handleImportCSV}
+			/>
+		</div>
 	</div>
+	
+	{#if $wasmReady && searchInput}
+		<div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 -mt-4">
+			<Sparkles size={14} class="text-green-500" />
+			<span>พบ {filteredTasks.length} รายการ จากการค้นหา "{searchInput}"</span>
+			<button 
+				on:click={handleClearSearch}
+				class="text-primary hover:underline ml-2"
+			>
+				ล้างการค้นหา
+			</button>
+		</div>
+	{/if}
 
 	<!-- View Tabs -->
 	<div class="flex flex-col sm:flex-row gap-2">
@@ -475,19 +561,6 @@
 	{#if showFilters}
 		<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 space-y-4 transition-colors">
 			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-				<div>
-					<label for="search" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ค้นหา</label>
-					<div class="relative">
-						<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-						<input
-							id="search"
-							type="text"
-							bind:value={filters.search}
-							placeholder="ค้นหางาน..."
-							class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
-						/>
-					</div>
-				</div>
 
 				<div>
 					<label for="startDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date ตั้งแต่</label>
@@ -584,26 +657,26 @@
 	<div class="mt-6">
 		{#if currentView === 'list'}
 			<TaskList
-				{tasks}
+				tasks={filteredTasks}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:statusChange={handleStatusChange}
 			/>
 		{:else if currentView === 'calendar'}
 			<CalendarView
-				{tasks}
+				tasks={filteredTasks}
 				on:selectTask={handleEditTask}
 			/>
 		{:else if currentView === 'kanban'}
 			<KanbanBoard
-				{tasks}
+				tasks={filteredTasks}
 				on:move={handleKanbanMove}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 			/>
 		{:else if currentView === 'table'}
 			<TableView
-				{tasks}
+				tasks={filteredTasks}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:statusChange={handleStatusChange}

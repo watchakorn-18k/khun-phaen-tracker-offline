@@ -1,0 +1,1 @@
+/Users/watchakorn.b/FILE_CODE/OTHER/task-tracker-offline/wasm-search/target/wasm32-unknown-unknown/release/wasm_search.wasm: /Users/watchakorn.b/FILE_CODE/OTHER/task-tracker-offline/wasm-search/src/lib.rs
