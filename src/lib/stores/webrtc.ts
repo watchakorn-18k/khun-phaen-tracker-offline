@@ -11,6 +11,12 @@ export const connectedPeersList = writable<string[]>([]);
 // Store for incoming sync data (for sync.ts to subscribe)
 export const incomingSyncData = writable<{ type: string; document?: string; sprints?: any[] } | null>(null);
 
+// Store for sync requests (host only - when peer requests sync)
+export const incomingSyncRequest = writable<{ peerId: string; timestamp: number } | null>(null);
+
+// Store for new peer joined (host should sync to new peer)
+export const newPeerJoined = writable<{ peerId: string; timestamp: number } | null>(null);
+
 let bc: BroadcastChannel | null = null;
 let currentRoomCode: string = '';
 let isHostPeer: boolean = false;
@@ -51,6 +57,9 @@ function handleSignalMessage(data: any) {
                     targetPeer: data.peerId,
                     peers: get(connectedPeersList)
                 });
+                
+                // Notify that new peer joined (host should sync to this peer)
+                newPeerJoined.set({ peerId: data.peerId, timestamp: Date.now() });
             }
             break;
             
@@ -76,6 +85,14 @@ function handleSignalMessage(data: any) {
             // Pass to sync.ts via store
             if (data.data) {
                 incomingSyncData.set(data.data);
+            }
+            break;
+            
+        case 'request-sync':
+            // Peer requests sync from host
+            if (isHostPeer) {
+                console.log('📥 Sync requested by:', data.peerId);
+                incomingSyncRequest.set({ peerId: data.peerId, timestamp: Date.now() });
             }
             break;
     }
@@ -160,6 +177,29 @@ export function broadcastData(data: any) {
         data: data,
         timestamp: Date.now()
     });
+}
+
+// Request sync from host (peer only)
+export function requestSyncFromHost() {
+    if (isHostPeer) {
+        console.log('⚠️ Host cannot request sync from itself');
+        return false;
+    }
+    
+    if (!currentRoomCode) {
+        console.log('⚠️ Not connected to any room');
+        return false;
+    }
+    
+    broadcast({
+        type: 'request-sync',
+        roomCode: currentRoomCode,
+        peerId: get(myPeerId),
+        timestamp: Date.now()
+    });
+    
+    console.log('📤 Requested sync from host');
+    return true;
 }
 
 // Generate 6-character room code

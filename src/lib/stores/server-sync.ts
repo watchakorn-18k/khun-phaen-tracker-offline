@@ -271,6 +271,12 @@ function handleServerMessage(msg: any) {
             serverPeers.update(peers => [...peers, msg.peer.id]);
             syncMessage.set('มีผู้เข้าร่วม: ' + msg.peer.id.substring(0, 8));
             setTimeout(() => syncMessage.set(''), 3000);
+            
+            // If host, sync document to new peer immediately
+            if (get(isServerHost)) {
+                console.log('👋 Host: New peer joined, syncing immediately to:', msg.peer.id);
+                syncDocumentToServer();
+            }
             break;
 
         case 'peer_left':

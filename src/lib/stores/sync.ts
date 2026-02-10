@@ -7,11 +7,14 @@ import {
     hostPeerId,
     connectedPeersList,
     incomingSyncData,
+    incomingSyncRequest,
+    newPeerJoined,
     initSignaling,
     createRoom as createWebRTCRoom,
     joinRoom as joinWebRTCRoom,
     leaveRoom as leaveWebRTCRoom,
     broadcastData,
+    requestSyncFromHost,
     getRoomInfo
 } from './webrtc';
 
@@ -54,6 +57,12 @@ export async function initCrdt() {
         
         // Subscribe to incoming sync data
         incomingSyncData.subscribe(handleIncomingSyncData);
+        
+        // Subscribe to sync requests (host only)
+        incomingSyncRequest.subscribe(handleSyncRequest);
+        
+        // Subscribe to new peer joined (host should sync to new peer)
+        newPeerJoined.subscribe(handleNewPeerJoined);
         
         console.log('✅ CRDT initialized for node:', nodeId);
         
@@ -160,10 +169,35 @@ export function leaveSyncRoom() {
     syncError.set(null);
 }
 
-// Request sync data from host
-function requestSyncFromHost() {
-    // In real implementation, this would request full document state
-    console.log('📥 Requesting sync from host...');
+// Handle sync request from peer (host only)
+function handleSyncRequest(request: { peerId: string; timestamp: number } | null) {
+    if (!request || !get(isHost)) return;
+    
+    console.log('📥 Host received sync request from:', request.peerId);
+    
+    // Host performs sync to broadcast data to all peers including the requester
+    performSync();
+}
+
+// Handle new peer joined (host should sync to new peer immediately)
+function handleNewPeerJoined(peer: { peerId: string; timestamp: number } | null) {
+    console.log('🔍 handleNewPeerJoined called:', peer, 'isHost:', get(isHost), 'syncStatus:', get(syncStatus));
+    
+    if (!peer) {
+        console.log('⚠️ No peer data, skipping');
+        return;
+    }
+    
+    if (!get(isHost)) {
+        console.log('⚠️ Not host, skipping sync. isHost:', get(isHost));
+        return;
+    }
+    
+    console.log('👋 New peer joined, host syncing immediately to:', peer.peerId);
+    
+    // Sync immediately to send data to new peer
+    const result = performSync();
+    console.log('📤 performSync result:', result);
 }
 
 // Export data for sharing
@@ -261,6 +295,18 @@ export async function performSync(): Promise<boolean> {
     const status = get(syncStatus);
     if (status !== 'connected' && status !== 'host') return false;
     
+    // If peer, request sync from host instead of broadcasting
+    if (!get(isHost)) {
+        console.log('📤 Peer requesting sync from host...');
+        const requested = requestSyncFromHost();
+        if (requested) {
+            // Set status back to connected (waiting for host to respond)
+            syncStatus.set('connected');
+        }
+        return requested;
+    }
+    
+    // Host: broadcast data to all peers
     syncStatus.set('connecting');
     
     try {
@@ -288,7 +334,7 @@ export async function performSync(): Promise<boolean> {
         
         lastSyncTime.set(new Date());
         pendingChanges.set(0);
-        syncStatus.set(get(isHost) ? 'host' : 'connected');
+        syncStatus.set('host');
         
         return true;
     } catch (error) {
