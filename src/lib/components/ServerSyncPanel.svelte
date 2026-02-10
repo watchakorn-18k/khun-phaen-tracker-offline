@@ -69,10 +69,35 @@
     let showPanel = false;
     let hostUrl = 'http://localhost:3001';
     let joinRoomCode = '';
+    let peerName = '';
     let copied = false;
     let error: string | null = null;
     let isEditingUrl = false;
     let editedUrl = '';
+    
+    // Load saved peer name
+    function loadSavedPeerName() {
+        try {
+            const saved = localStorage.getItem('sync-peer-name');
+            if (saved) {
+                peerName = saved;
+            } else {
+                // Default to a random friendly name
+                peerName = 'ผู้ใช้ ' + Math.floor(Math.random() * 1000);
+            }
+        } catch (e) {
+            peerName = 'ผู้ใช้ ' + Math.floor(Math.random() * 1000);
+        }
+    }
+    
+    // Save peer name
+    function savePeerName(name: string) {
+        try {
+            localStorage.setItem('sync-peer-name', name);
+        } catch (e) {
+            console.error('Failed to save peer name:', e);
+        }
+    }
     
     // Function to load saved URL
     function loadSavedUrl() {
@@ -89,6 +114,9 @@
     
     // Load saved URL on mount
     onMount(() => {
+        // Load peer name
+        loadSavedPeerName();
+        
         // Check for URL params (shared link) first
         const urlParams = new URLSearchParams(window.location.search);
         const sharedServer = urlParams.get('sync_server');
@@ -160,8 +188,13 @@
     async function handleJoinRoom() {
         if (!joinRoomCode.trim()) return;
         
+        // Save peer name before joining
+        if (peerName.trim()) {
+            savePeerName(peerName.trim());
+        }
+        
         error = null;
-        const success = await joinServerRoom(hostUrl, joinRoomCode.trim());
+        const success = await joinServerRoom(hostUrl, joinRoomCode.trim(), peerName.trim() || 'ผู้ใช้');
         
         if (!success) {
             error = 'ไม่สามารถเข้าร่วมห้องได้';
@@ -335,21 +368,29 @@
                     <!-- Join Room -->
                     <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                         <h4 class="font-medium text-gray-900 dark:text-white mb-2">เข้าร่วมห้อง</h4>
-                        <div class="flex gap-2">
+                        <div class="space-y-3">
                             <input
                                 type="text"
-                                bind:value={joinRoomCode}
-                                placeholder="รหัสห้อง 6 ตัว"
-                                maxlength="6"
-                                class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg uppercase text-center tracking-widest dark:bg-gray-700 dark:text-white"
+                                bind:value={peerName}
+                                placeholder="ชื่อของคุณ"
+                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
                             />
-                            <button
-                                on:click={handleJoinRoom}
-                                disabled={!joinRoomCode.trim()}
-                                class="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
-                            >
-                                เข้าร่วม
-                            </button>
+                            <div class="flex gap-2">
+                                <input
+                                    type="text"
+                                    bind:value={joinRoomCode}
+                                    placeholder="รหัสห้อง 6 ตัว"
+                                    maxlength="6"
+                                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg uppercase text-center tracking-widest dark:bg-gray-700 dark:text-white"
+                                />
+                                <button
+                                    on:click={handleJoinRoom}
+                                    disabled={!joinRoomCode.trim()}
+                                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    เข้าร่วม
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
