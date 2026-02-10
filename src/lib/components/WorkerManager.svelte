@@ -135,7 +135,7 @@
 
 					<div>
 						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">สีประจำตัว</label>
-						<div class="flex flex-wrap gap-2">
+						<div class="flex flex-wrap gap-2 mb-3">
 							{#each colorOptions as color}
 								<button
 									type="button"
@@ -152,6 +152,24 @@
 									{/if}
 								</button>
 							{/each}
+						</div>
+						<div class="flex items-center gap-2">
+							<input
+								type="color"
+								bind:value={newWorkerColor}
+								class="w-10 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600"
+							/>
+							<input
+								type="text"
+								bind:value={newWorkerColor}
+								placeholder="#6366F1"
+								class="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
+								maxlength="7"
+							/>
+							<div 
+								class="w-8 h-8 rounded-full border-2 border-gray-300 dark:border-gray-600"
+								style="background-color: {newWorkerColor}"
+							></div>
 						</div>
 					</div>
 
