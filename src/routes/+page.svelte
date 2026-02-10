@@ -666,7 +666,7 @@
 	<!-- Filters Panel -->
 	{#if showFilters}
 		<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 space-y-4 transition-colors">
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
 				<div>
 					<label for="startDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date ตั้งแต่</label>
@@ -735,7 +735,7 @@
 					<select
 						id="assignee"
 						bind:value={filters.assignee_id}
-						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+						class="w-full h-10 px-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
 					>
 						<option value="all">ทั้งหมด</option>
 						<option value={null}>ไม่ระบุผู้รับผิดชอบ</option>
@@ -746,7 +746,7 @@
 				</div>
 			</div>
 
-			<div class="flex gap-2">
+			<div class="flex justify-end gap-2">
 				<button
 					on:click={applyFilters}
 					class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors"

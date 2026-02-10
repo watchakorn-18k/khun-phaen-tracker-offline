@@ -3,6 +3,7 @@
 	import type { Task, Project, Assignee } from '$lib/types';
 	import { CATEGORIES } from '$lib/types';
 	import { Calendar, FileText, Tag, CheckCircle, User, Plus, Folder, X } from 'lucide-svelte';
+	import { taskDefaults } from '$lib/stores/taskDefaults';
 	
 	const dispatch = createEventDispatcher<{
 		submit: Omit<Task, 'id' | 'created_at'>;
@@ -38,13 +39,25 @@
 
 	// Reset form when editingTask changes or when dialog opens
 	$: if (show) {
-		title = editingTask?.title || '';
-		project = editingTask?.project || '';
-		date = editingTask?.date || new Date().toISOString().split('T')[0];
-		status = editingTask?.status || 'todo';
-		category = editingTask?.category || 'งานหลัก';
-		notes = editingTask?.notes || '';
-		assignee_id = editingTask?.assignee_id || null;
+		if (editingTask) {
+			// Edit mode - use task values
+			title = editingTask.title || '';
+			project = editingTask.project || '';
+			date = editingTask.date || new Date().toISOString().split('T')[0];
+			status = editingTask.status || 'todo';
+			category = editingTask.category || 'งานหลัก';
+			notes = editingTask.notes || '';
+			assignee_id = editingTask.assignee_id || null;
+		} else {
+			// Add mode - use default values from store
+			title = '';
+			project = $taskDefaults.project || '';
+			date = new Date().toISOString().split('T')[0];
+			status = 'todo';
+			category = $taskDefaults.category || 'งานหลัก';
+			notes = '';
+			assignee_id = $taskDefaults.assignee_id || null;
+		}
 		showAddAssigneeForm = false;
 		newAssigneeName = '';
 		newAssigneeColor = '#6366F1';
@@ -52,6 +65,15 @@
 	
 	function handleSubmit() {
 		if (!title.trim()) return;
+		
+		// Save defaults for next time (only if adding new task)
+		if (!editingTask) {
+			taskDefaults.set({
+				project: project.trim(),
+				assignee_id,
+				category
+			});
+		}
 		
 		dispatch('submit', {
 			title: title.trim(),
@@ -217,7 +239,7 @@
 							</div>
 							<div>
 								<label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">สีประจำตัว</label>
-								<div class="flex flex-wrap gap-1.5">
+								<div class="flex flex-wrap gap-1.5 mb-2">
 									{#each colorOptions as color}
 										<button
 											type="button"
@@ -226,6 +248,24 @@
 											style="background-color: {color}"
 										></button>
 									{/each}
+								</div>
+								<div class="flex items-center gap-2">
+									<input
+										type="color"
+										bind:value={newAssigneeColor}
+										class="w-10 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600"
+									/>
+									<input
+										type="text"
+										bind:value={newAssigneeColor}
+										placeholder="#6366F1"
+										class="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
+										maxlength="7"
+									/>
+									<div 
+										class="w-8 h-8 rounded-full border-2 border-gray-300 dark:border-gray-600"
+										style="background-color: {newAssigneeColor}"
+									></div>
 								</div>
 							</div>
 							<div class="flex gap-2 pt-1">
