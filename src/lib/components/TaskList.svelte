@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import type { Task } from '$lib/types';
 	import { Calendar, Tag, FileText, Edit2, Trash2, MoreVertical, User, Folder } from 'lucide-svelte';
+	import Pagination from './Pagination.svelte';
 	
 	const dispatch = createEventDispatcher<{
 		edit: Task;
@@ -10,6 +11,12 @@
 	}>();
 	
 	export let tasks: Task[] = [];
+	
+	// Pagination
+	let pageSize = 50;
+	let currentPage = 1;
+	
+	$: paginatedTasks = tasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 	
 	function formatDate(dateStr: string): string {
 		const date = new Date(dateStr);
@@ -46,7 +53,7 @@
 			<p class="text-sm mt-1">ลองเพิ่มงานใหม่ดูสิ!</p>
 		</div>
 	{:else}
-		{#each tasks as task (task.id)}
+		{#each paginatedTasks as task (task.id)}
 			<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow group">
 				<div class="flex items-start justify-between gap-4">
 					<div class="flex-1 min-w-0">
@@ -131,6 +138,16 @@
 				</div>
 			</div>
 		{/each}
+	{/if}
+	
+	<!-- Pagination -->
+	{#if tasks.length > 0}
+		<Pagination 
+			totalItems={tasks.length} 
+			bind:pageSize 
+			bind:currentPage 
+			pageSizeOptions={[20, 50, 100]}
+		/>
 	{/if}
 </div>
 

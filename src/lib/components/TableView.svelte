@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import type { Task } from '$lib/types';
 	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import Pagination from './Pagination.svelte';
 
 	export let tasks: Task[] = [];
 
@@ -18,6 +19,10 @@
 	let sortDirection: SortDirection = 'desc';
 	let selectedTasks: Set<number> = new Set();
 	let expandedMobileCards: Set<number> = new Set();
+	
+	// Pagination
+	let pageSize = 50;
+	let currentPage = 1;
 
 	$: sortedTasks = [...tasks].sort((a, b) => {
 		let aVal: any;
@@ -44,6 +49,8 @@
 				return aVal < bVal ? 1 : -1;
 			}
 		});
+	
+	$: paginatedTasks = sortedTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
 	function toggleSort(column: SortColumn) {
 		if (sortColumn === column) {
@@ -255,7 +262,7 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-				{#each sortedTasks as task (task.id)}
+				{#each paginatedTasks as task (task.id)}
 					<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
 							<input
@@ -375,9 +382,9 @@
 
 	<!-- Mobile Card View -->
 	<div class="md:hidden">
-		{#if sortedTasks.length > 0}
+		{#if paginatedTasks.length > 0}
 			<div class="divide-y divide-gray-200 dark:divide-gray-700">
-				{#each sortedTasks as task (task.id)}
+				{#each paginatedTasks as task (task.id)}
 					<div class="p-3 sm:p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
 						<div class="flex items-start gap-3">
 							<input
@@ -508,11 +515,14 @@
 		{/if}
 	</div>
 
-	<!-- Footer Summary -->
+	<!-- Pagination -->
 	{#if tasks.length > 0}
-		<div class="px-3 py-2 lg:px-4 lg:py-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700 text-xs lg:text-sm text-gray-600 dark:text-gray-400">
-			แสดง {tasks.length} รายการ
-		</div>
+		<Pagination 
+			totalItems={tasks.length} 
+			bind:pageSize 
+			bind:currentPage 
+			pageSizeOptions={[20, 50, 100]}
+		/>
 	{/if}
 </div>
 

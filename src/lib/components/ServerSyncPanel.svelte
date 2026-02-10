@@ -33,7 +33,7 @@
         async (csvData: string) => {
             console.log('📥 Importing data from server...', csvData.substring(0, 100) + '...');
             try {
-                const result = await importAllData(csvData, { clearExisting: true });
+                const result = await importAllData(csvData, { clearExisting: true, useExistingIds: true });
                 console.log(`✅ Imported ${result.tasks} tasks, ${result.projects} projects, ${result.assignees} assignees from server`);
                 
                 // Notify parent to reload data instead of page reload

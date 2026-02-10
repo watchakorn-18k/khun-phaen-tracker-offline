@@ -1012,13 +1012,23 @@ export async function exportAllData(): Promise<string> {
 	return csvRows.join('\n');
 }
 
-export async function importAllData(csvContent: string, options: { clearExisting?: boolean } = {}): Promise<{ tasks: number; projects: number; assignees: number }> {
+export async function importAllData(csvContent: string, options: { clearExisting?: boolean; useExistingIds?: boolean } = {}): Promise<{ tasks: number; projects: number; assignees: number }> {
 	if (!db) throw new Error('DB not initialized');
 	
 	const lines = csvContent.trim().split('\n');
 	if (lines.length < 2) {
 		console.warn('CSV has less than 2 lines');
 		return { tasks: 0, projects: 0, assignees: 0 };
+	}
+	
+	// Get existing task IDs to check for duplicates
+	const existingIds = new Set<number>();
+	if (options.useExistingIds !== true) {
+		const existingResult = execQuery('SELECT id FROM tasks');
+		for (const row of existingResult.values) {
+			existingIds.add(row[0]);
+		}
+		console.log(`📋 Existing tasks: ${existingIds.size}`);
 	}
 	
 	// Parse sections
@@ -1192,12 +1202,17 @@ export async function importAllData(csvContent: string, options: { clearExisting
 					}
 				}
 				
-				if (row.id) {
+				// Check if we should use existing ID or create new one
+				const rowId = row.id ? parseInt(row.id) : null;
+				const shouldUseExistingId = options.useExistingIds === true && rowId && !existingIds.has(rowId);
+				
+				if (shouldUseExistingId) {
+					// Use REPLACE for sync with existing IDs
 					db.run(`
 						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
-						parseInt(row.id),
+						rowId,
 						row.title || '',
 						row.project || '',
 						parseInt(row.duration_minutes) || 0,
@@ -1209,6 +1224,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
+					// Always INSERT as new task (ignore ID from file)
 					db.run(`
 						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?)

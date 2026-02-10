@@ -413,11 +413,38 @@
 	
 	async function handleImportCSV(event: CustomEvent<string>) {
 		try {
+			console.log('📥 Starting import...');
+			const beforeStats = await getStats();
+			console.log('📊 Before import:', beforeStats);
+			
 			const result = await importAllData(event.detail, { clearExisting: false });
+			console.log('✅ Import result:', result);
+			
+			// Clear filters to show all imported data
+			filters = {
+				startDate: '',
+				endDate: '',
+				status: 'all',
+				category: 'all',
+				project: 'all',
+				assignee_id: 'all',
+				search: ''
+			};
+			searchInput = '';
+			clearSearch();
+			
+			// Force reload with small delay to ensure DB is saved
+			await new Promise(r => setTimeout(r, 100));
 			await loadData();
-			showMessage(`นำเข้าสำเร็จ ${result.tasks} งาน, ${result.projects} โปรเจค, ${result.assignees} ผู้รับผิดชอบ`);
+			
+			const afterStats = await getStats();
+			console.log('📊 After import:', afterStats);
+			
+			const actualAdded = afterStats.total - beforeStats.total;
+			showMessage(`นำเข้าสำเร็จ ${result.tasks} งาน (เพิ่มใหม่ ${actualAdded} งาน), ${result.projects} โปรเจค, ${result.assignees} ผู้รับผิดชอบ`);
 		} catch (e) {
-			showMessage('เกิดข้อผิดพลาดในการนำเข้า', 'error');
+			console.error('❌ Import error:', e);
+			showMessage('เกิดข้อผิดพลาดในการนำเข้า: ' + (e instanceof Error ? e.message : 'Unknown error'), 'error');
 		}
 	}
 	

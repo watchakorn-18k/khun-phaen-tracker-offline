@@ -11,12 +11,13 @@ export function enableAutoImport() {
     autoImportEnabled = true;
     console.log('✅ Auto-import enabled');
     
-    // Set up default callbacks for auto-import
+    // Set up default callbacks for auto-import (sync from server)
     if (!onDocumentReceived) {
         onDocumentReceived = async (csvData: string) => {
-            console.log('📥 Auto-importing data...');
+            console.log('📥 Auto-importing data from sync...');
             try {
-                const result = await importAllData(csvData, { clearExisting: true });
+                // Use useExistingIds: true for sync to preserve IDs from server
+                const result = await importAllData(csvData, { clearExisting: true, useExistingIds: true });
                 console.log(`✅ Auto-imported ${result.tasks} tasks, ${result.projects} projects, ${result.assignees} assignees`);
                 
                 // Reload page to refresh data
