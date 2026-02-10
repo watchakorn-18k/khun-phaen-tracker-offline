@@ -11,12 +11,25 @@
 	import ExportImport from '$lib/components/ExportImport.svelte';
 	import WorkerManager from '$lib/components/WorkerManager.svelte';
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
-	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles } from 'lucide-svelte';
+	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles, Settings2 } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
 	import { enableAutoImport, setMergeCallback } from '$lib/stores/server-sync';
 	import { Zap } from 'lucide-svelte';
 	import ServerSyncPanel from '$lib/components/ServerSyncPanel.svelte';
+	import { tabSettings, type TabId } from '$lib/stores/tabSettings';
+	import TabSettings from '$lib/components/TabSettings.svelte';
+	
+	const FILTER_STORAGE_KEY = 'task-filters';
+	const DEFAULT_FILTERS: FilterOptions = {
+		startDate: '',
+		endDate: '',
+		status: 'all',
+		category: 'all',
+		project: 'all',
+		assignee_id: 'all',
+		search: ''
+	};
 	
 	let tasks: Task[] = [];
 	let filteredTasks: Task[] = [];
@@ -34,16 +47,9 @@
 	let showWorkerManager = false;
 	let showProjectManager = false;
 	let searchInput = '';
+	let showTabSettings = false;
 	
-	let filters: FilterOptions = {
-		startDate: '',
-		endDate: '',
-		status: 'all',
-		category: 'all',
-		project: 'all',
-		assignee_id: 'all',
-		search: ''
-	};
+	let filters: FilterOptions = { ...DEFAULT_FILTERS };
 	
 	let message = '';
 	let messageType: 'success' | 'error' = 'success';
@@ -66,6 +72,8 @@
 			
 			return result;
 		});
+		
+		restoreFilters();
 		
 		// Load data (SQL.js only, WASM search/compression disabled for memory)
 		loadData().then(() => {
@@ -119,7 +127,7 @@
 	// Clear search
 	function handleClearSearch() {
 		searchInput = '';
-		clearSearch();
+		clearSearch([]);
 		filteredTasks = tasks;
 	}
 	
@@ -421,17 +429,9 @@
 			console.log('✅ Import result:', result);
 			
 			// Clear filters to show all imported data
-			filters = {
-				startDate: '',
-				endDate: '',
-				status: 'all',
-				category: 'all',
-				project: 'all',
-				assignee_id: 'all',
-				search: ''
-			};
+			filters = { ...DEFAULT_FILTERS };
 			searchInput = '';
-			clearSearch();
+			clearSearch([]);
 			
 			// Force reload with small delay to ensure DB is saved
 			await new Promise(r => setTimeout(r, 100));
@@ -447,21 +447,55 @@
 			showMessage('เกิดข้อผิดพลาดในการนำเข้า: ' + (e instanceof Error ? e.message : 'Unknown error'), 'error');
 		}
 	}
+
+	function persistFilters() {
+		if (typeof localStorage === 'undefined') return;
+		const assigneeValue = filters.assignee_id === undefined ? 'all' : filters.assignee_id;
+		const data = {
+			startDate: filters.startDate || '',
+			endDate: filters.endDate || '',
+			status: filters.status || 'all',
+			category: filters.category || 'all',
+			project: filters.project || 'all',
+			assignee_id: assigneeValue
+		};
+		localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(data));
+	}
+
+	function restoreFilters() {
+		if (typeof localStorage === 'undefined') return;
+		const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+		if (!raw) return;
+		
+		try {
+			const saved = JSON.parse(raw) as Partial<FilterOptions>;
+			filters = {
+				...DEFAULT_FILTERS,
+				startDate: saved.startDate ?? '',
+				endDate: saved.endDate ?? '',
+				status: saved.status ?? 'all',
+				category: saved.category ?? 'all',
+				project: saved.project ?? 'all',
+				assignee_id: saved.assignee_id !== undefined ? saved.assignee_id : 'all'
+			};
+		} catch {
+			localStorage.removeItem(FILTER_STORAGE_KEY);
+		}
+	}
+	
+	function clearSavedFilters() {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.removeItem(FILTER_STORAGE_KEY);
+	}
 	
 	function applyFilters() {
+		persistFilters();
 		loadData();
 	}
 	
 	function clearFilters() {
-		filters = {
-			startDate: '',
-			endDate: '',
-			status: 'all',
-			category: 'all',
-			project: 'all',
-			assignee_id: 'all',
-			search: ''
-		};
+		filters = { ...DEFAULT_FILTERS };
+		clearSavedFilters();
 		loadData();
 	}
 </script>
@@ -492,7 +526,7 @@
 				type="text"
 				value={searchInput}
 				on:input={handleSearchInput}
-				placeholder="🔍 ค้นหางาน... (รองรับภาษาไทย & ค้นหาละเอียด)"
+				placeholder="ค้นหางาน..."
 				class="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white text-base"
 			/>
 			{#if searchInput}
@@ -510,8 +544,8 @@
 					{#if $wasmLoading}
 						<span class="text-gray-400">⏳</span>
 					{:else if $wasmReady}
-						<Sparkles size={12} />
-						<span>AI</span>
+						
+						<span></span>
 					{/if}
 				</span>
 			{/if}
@@ -582,39 +616,48 @@
 	<!-- View Tabs -->
 	<div class="flex flex-col sm:flex-row gap-2">
 		<div class="flex-1 flex p-1 bg-gray-100 dark:bg-gray-800 rounded-lg transition-colors">
+			{#each $tabSettings as tab (tab.id)}
+				<button
+					on:click={() => currentView = tab.id}
+					class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === tab.id ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+				>
+					{#if tab.icon === 'List'}
+						<List size={16} />
+					{:else if tab.icon === 'CalendarDays'}
+						<CalendarDays size={16} />
+					{:else if tab.icon === 'Columns3'}
+						<Columns3 size={16} />
+					{:else if tab.icon === 'Table'}
+						<Table size={16} />
+					{/if}
+					<span class="hidden sm:inline">{tab.label}</span>
+				</button>
+			{/each}
+		</div>
+		
+		<!-- Tab Settings -->
+		<div class="relative">
 			<button
-				on:click={() => currentView = 'list'}
-				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'list' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+				on:click={() => showTabSettings = !showTabSettings}
+				class="flex items-center justify-center gap-2 px-4 py-2 h-10 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+				title="ตั้งค่าแท็บ"
 			>
-				<List size={16} />
-				<span class="hidden sm:inline">รายการ</span>
+				<Settings2 size={16} />
 			</button>
-			<button
-				on:click={() => currentView = 'calendar'}
-				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'calendar' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
-			>
-				<CalendarDays size={16} />
-				<span class="hidden sm:inline">ปฏิทิน</span>
-			</button>
-			<button
-				on:click={() => currentView = 'kanban'}
-				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'kanban' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
-			>
-				<Columns3 size={16} />
-				<span class="hidden sm:inline">Kanban</span>
-			</button>
-			<button
-				on:click={() => currentView = 'table'}
-				class="flex-1 flex items-center justify-center gap-2 px-2 sm:px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'table' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
-			>
-				<Table size={16} />
-				<span class="hidden sm:inline">ตาราง</span>
-			</button>
+			
+			{#if showTabSettings}
+				<div class="absolute top-full right-0 mt-2 z-50">
+					<TabSettings 
+						on:close={() => showTabSettings = false}
+						on:save={() => showTabSettings = false}
+					/>
+				</div>
+			{/if}
 		</div>
 		
 		<button
 			on:click={() => { showForm = !showForm; editingTask = null; }}
-			class="flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors sm:w-auto w-full"
+			class="flex items-center justify-center gap-2 px-4 py-2 h-10 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors sm:w-auto w-full"
 		>
 			<Plus size={18} />
 			<span class="hidden sm:inline">เพิ่มงาน</span>
@@ -623,7 +666,7 @@
 	<!-- Filters Panel -->
 	{#if showFilters}
 		<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 space-y-4 transition-colors">
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
 
 				<div>
 					<label for="startDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date ตั้งแต่</label>
@@ -683,6 +726,21 @@
 						<option value="all">ทั้งหมด</option>
 						{#each projects as proj}
 							<option value={proj}>{proj}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div>
+					<label for="assignee" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ผู้รับผิดชอบ</label>
+					<select
+						id="assignee"
+						bind:value={filters.assignee_id}
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+					>
+						<option value="all">ทั้งหมด</option>
+						<option value={null}>ไม่ระบุผู้รับผิดชอบ</option>
+						{#each assignees as assignee}
+							<option value={assignee.id}>{assignee.name}</option>
 						{/each}
 					</select>
 				</div>

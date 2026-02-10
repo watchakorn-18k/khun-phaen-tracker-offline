@@ -324,7 +324,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 		query += ` AND t.project = ?`;
 		params.push(filter.project);
 	}
-	if (filter?.assignee_id && filter.assignee_id !== 'all') {
+	if (filter?.assignee_id !== undefined && filter.assignee_id !== 'all') {
 		if (filter.assignee_id === null) {
 			query += ` AND t.assignee_id IS NULL`;
 		} else {

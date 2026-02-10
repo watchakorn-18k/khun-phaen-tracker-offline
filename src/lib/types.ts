@@ -33,7 +33,7 @@ export interface FilterOptions {
 	status?: Task['status'] | 'all';
 	category?: string | 'all';
 	project?: string | 'all';
-	assignee_id?: number | 'all';
+	assignee_id?: number | 'all' | null;
 	search?: string;
 }
 

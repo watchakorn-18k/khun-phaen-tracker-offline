@@ -2,7 +2,7 @@
 	import { dndzone, TRIGGERS, type DndEvent } from 'svelte-dnd-action';
 	import { createEventDispatcher } from 'svelte';
 	import type { Task } from '$lib/types';
-	import { Edit2, Trash2, MoreVertical, Folder } from 'lucide-svelte';
+	import { Edit2, Trash2, MoreVertical, Folder, Clock3, Hammer, CheckCircle2 } from 'lucide-svelte';
 	
 	const dispatch = createEventDispatcher<{
 		move: { id: number; newStatus: Task['status'] };
@@ -21,9 +21,9 @@
 	$: doneItems = tasks.filter((t): t is TaskWithRequiredId => t.status === 'done' && t.id !== undefined);
 	
 	const columns = [
-		{ id: 'todo', title: 'รอดำเนินการ', color: 'bg-warning/10 border-warning/30', textColor: 'text-warning', icon: '⏳' },
-		{ id: 'in-progress', title: 'กำลังทำ', color: 'bg-primary/10 border-primary/30', textColor: 'text-primary', icon: '🔨' },
-		{ id: 'done', title: 'เสร็จแล้ว', color: 'bg-success/10 border-success/30', textColor: 'text-success', icon: '✅' }
+		{ id: 'todo', title: 'รอดำเนินการ', color: 'bg-warning/10 border-warning/30', textColor: 'text-warning', icon: Clock3 },
+		{ id: 'in-progress', title: 'กำลังทำ', color: 'bg-primary/10 border-primary/30', textColor: 'text-primary', icon: Hammer },
+		{ id: 'done', title: 'เสร็จแล้ว', color: 'bg-success/10 border-success/30', textColor: 'text-success', icon: CheckCircle2 }
 	] as const;
 	
 	function handleDndConsider(e: CustomEvent<DndEvent<TaskWithRequiredId>>, status: Task['status']) {
@@ -69,7 +69,7 @@
 	<div class="bg-gray-100 dark:bg-gray-800 rounded-xl p-3 transition-colors">
 		<div class="flex items-center justify-between mb-3 px-1">
 			<div class="flex items-center gap-2">
-				<span class="text-lg">⏳</span>
+				<Clock3 size={18} class="text-warning" />
 				<h3 class="font-semibold text-gray-700 dark:text-gray-200">รอดำเนินการ</h3>
 				<span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full text-xs font-medium">
 					{todoItems.length}
@@ -138,7 +138,7 @@
 	<div class="bg-primary/5 dark:bg-primary/10 rounded-xl p-3 border-2 border-primary/20 dark:border-primary/30 transition-colors">
 		<div class="flex items-center justify-between mb-3 px-1">
 			<div class="flex items-center gap-2">
-				<span class="text-lg">🔨</span>
+				<Hammer size={18} class="text-primary" />
 				<h3 class="font-semibold text-primary">กำลังทำ</h3>
 				<span class="bg-primary/20 text-primary px-2 py-0.5 rounded-full text-xs font-medium">
 					{inProgressItems.length}
@@ -207,7 +207,7 @@
 	<div class="bg-success/5 dark:bg-success/10 rounded-xl p-3 border-2 border-success/20 dark:border-success/30 transition-colors">
 		<div class="flex items-center justify-between mb-3 px-1">
 			<div class="flex items-center gap-2">
-				<span class="text-lg">✅</span>
+				<CheckCircle2 size={18} class="text-success" />
 				<h3 class="font-semibold text-success">เสร็จแล้ว</h3>
 				<span class="bg-success/20 text-success px-2 py-0.5 rounded-full text-xs font-medium">
 					{doneItems.length}

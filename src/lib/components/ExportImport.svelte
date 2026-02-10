@@ -78,9 +78,9 @@
 	<div class="relative" bind:this={dropdownRef}>
 		<button
 			on:click|stopPropagation={() => showExportDropdown = !showExportDropdown}
-			class="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-success/10 hover:bg-success/20 text-success rounded-lg font-medium transition-colors"
+			class="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 bg-success/10 hover:bg-success/20 text-success rounded-lg font-medium transition-colors"
 		>
-			<Download size={18} />
+			<Download size={16} />
 			<span class="hidden sm:inline">ส่งออก</span>
 			<ChevronDown size={16} class="transition-transform {showExportDropdown ? 'rotate-180' : ''}" />
 		</button>
@@ -115,9 +115,9 @@
 
 	<button
 		on:click={() => fileInput?.click()}
-		class="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg font-medium transition-colors"
+		class="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg font-medium transition-colors"
 	>
-		<Upload size={18} />
+		<Upload size={16} />
 		<span class="hidden sm:inline">นำเข้า CSV</span>
 		<span class="sm:hidden">นำเข้า</span>
 	</button>
