@@ -44,7 +44,23 @@
 	let assignees: Assignee[] = [];
 	let workerStats: { id: number; taskCount: number }[] = [];
 	let stats = { total: 0, todo: 0, in_progress: 0, done: 0, total_minutes: 0 };
-	let currentView: ViewMode = 'list';
+	const VIEW_MODE_STORAGE_KEY = 'khunphaen-view-mode';
+	
+	function loadSavedViewMode(): ViewMode {
+		if (typeof localStorage === 'undefined') return 'list';
+		const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+		if (saved && ['list', 'calendar', 'kanban', 'table'].includes(saved)) {
+			return saved as ViewMode;
+		}
+		return 'list';
+	}
+	
+	function saveViewMode(view: ViewMode) {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.setItem(VIEW_MODE_STORAGE_KEY, view);
+	}
+	
+	let currentView: ViewMode = loadSavedViewMode();
 	let editingTask: Task | null = null;
 	let showForm = false;
 	let showFilters = false;
@@ -57,6 +73,9 @@
 	let filters: FilterOptions = { ...DEFAULT_FILTERS };
 	let selectedSprint: Sprint | null = null;
 	$: filterableSprints = $sprints.filter((sprint) => sprint.status !== 'completed');
+	
+	// Save view mode when it changes
+	$: saveViewMode(currentView);
 	
 	let message = '';
 	let messageType: 'success' | 'error' = 'success';
