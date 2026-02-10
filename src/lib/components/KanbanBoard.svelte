@@ -1,34 +1,38 @@
 <script lang="ts">
 	import { dndzone, TRIGGERS, type DndEvent } from 'svelte-dnd-action';
 	import { createEventDispatcher } from 'svelte';
-	import type { Task } from '$lib/types';
-	import { Edit2, Trash2, MoreVertical, Folder, Clock3, Hammer, CheckCircle2 } from 'lucide-svelte';
-	
+	import type { Task, Sprint } from '$lib/types';
+	import { Edit2, Trash2, MoreVertical, Folder, Clock3, Hammer, CheckCircle2, Flag } from 'lucide-svelte';
+
 	const dispatch = createEventDispatcher<{
 		move: { id: number; newStatus: Task['status'] };
 		edit: Task;
 		delete: number;
 	}>();
-	
+
 	export let tasks: Task[] = [];
-	
+	export let sprints: Sprint[] = [];
+
+	function getSprintName(sprintId: number | null | undefined): string | null {
+		if (!sprintId) return null;
+		return sprints.find(s => s.id === sprintId)?.name || null;
+	}
+
 	interface TaskWithRequiredId extends Task {
 		id: number;
 	}
-	
+
 	$: todoItems = tasks.filter((t): t is TaskWithRequiredId => t.status === 'todo' && t.id !== undefined);
 	$: inProgressItems = tasks.filter((t): t is TaskWithRequiredId => t.status === 'in-progress' && t.id !== undefined);
 	$: doneItems = tasks.filter((t): t is TaskWithRequiredId => t.status === 'done' && t.id !== undefined);
-	
+
 	const columns = [
 		{ id: 'todo', title: 'รอดำเนินการ', color: 'bg-warning/10 border-warning/30', textColor: 'text-warning', icon: Clock3 },
 		{ id: 'in-progress', title: 'กำลังทำ', color: 'bg-primary/10 border-primary/30', textColor: 'text-primary', icon: Hammer },
 		{ id: 'done', title: 'เสร็จแล้ว', color: 'bg-success/10 border-success/30', textColor: 'text-success', icon: CheckCircle2 }
 	] as const;
-	
+
 	function handleDndConsider(e: CustomEvent<DndEvent<TaskWithRequiredId>>, status: Task['status']) {
-		// During dragging, just update the display without filtering
-		// This allows items to be shown in their new column during drag
 		const items = e.detail.items;
 		switch (status) {
 			case 'todo': todoItems = items; break;
@@ -40,27 +44,22 @@
 	function handleDndFinalize(e: CustomEvent<DndEvent<TaskWithRequiredId>>, status: Task['status']) {
 		const items = e.detail.items;
 
-		// Always update the reactive arrays first
 		switch (status) {
 			case 'todo': todoItems = items; break;
 			case 'in-progress': inProgressItems = items; break;
 			case 'done': doneItems = items; break;
 		}
 
-		// Check if any item was dropped into this zone from another column
 		if ((e.detail.info.trigger as any) === (TRIGGERS.DROPPED_INTO_ZONE as any)) {
 			const droppedId = e.detail.info.id;
-
-			// Find the dropped item in the original tasks array
 			const originalTask = tasks.find(t => t.id === droppedId);
 
 			if (originalTask && originalTask.status !== status) {
-				// Dispatch the move event to parent to update the database
 				dispatch('move', { id: droppedId, newStatus: status });
 			}
 		}
 	}
-	
+
 	let openMenuId: number | null = null;
 </script>
 
@@ -100,6 +99,12 @@
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
 								<span class="truncate max-w-[60px]">{task.project}</span>
+							</span>
+						{/if}
+						{#if getSprintName(task.sprint_id)}
+							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
+								<Flag size={10} />
+								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
 							</span>
 						{/if}
 						<span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">{task.category}</span>
@@ -164,13 +169,19 @@
 						</button>
 					</div>
 
+					<div class="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
 						{#if task.project}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
 								<span class="truncate max-w-[60px]">{task.project}</span>
 							</span>
 						{/if}
-					<div class="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+						{#if getSprintName(task.sprint_id)}
+							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
+								<Flag size={10} />
+								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
+							</span>
+						{/if}
 						<span class="px-1.5 py-0.5 bg-primary/10 text-primary rounded">{task.category}</span>
 						{#if task.assignee}
 							<span class="flex items-center gap-1" title={task.assignee.name}>
@@ -233,13 +244,19 @@
 						</button>
 					</div>
 
+					<div class="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
 						{#if task.project}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
 								<span class="truncate max-w-[60px]">{task.project}</span>
 							</span>
 						{/if}
-					<div class="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+						{#if getSprintName(task.sprint_id)}
+							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
+								<Flag size={10} />
+								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
+							</span>
+						{/if}
 						<span class="px-1.5 py-0.5 bg-success/10 text-success rounded">{task.category}</span>
 						{#if task.assignee}
 							<span class="flex items-center gap-1" title={task.assignee.name}>

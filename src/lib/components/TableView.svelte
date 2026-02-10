@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import type { Task } from '$lib/types';
-	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import type { Task, Sprint } from '$lib/types';
+	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp, Flag } from 'lucide-svelte';
 	import Pagination from './Pagination.svelte';
 
 	export let tasks: Task[] = [];
+	export let sprints: Sprint[] = [];
 
 	const dispatch = createEventDispatcher<{
 		edit: Task;
@@ -13,6 +14,11 @@
 		statusChange: { id: number; status: Task['status'] };
 	}>();
 
+	function getSprintName(sprintId: number | null | undefined): string | null {
+		if (!sprintId) return null;
+		return sprints.find(s => s.id === sprintId)?.name || null;
+	}
+
 	type SortColumn = 'title' | 'project' | 'date' | 'status' | 'category' | 'duration_minutes' | 'assignee';
 	type SortDirection = 'asc' | 'desc';
 
@@ -20,7 +26,7 @@
 	let sortDirection: SortDirection = 'desc';
 	let selectedTasks: Set<number> = new Set();
 	let expandedMobileCards: Set<number> = new Set();
-	
+
 	// Pagination
 	let pageSize = 50;
 	let currentPage = 1;
@@ -50,7 +56,7 @@
 				return aVal < bVal ? 1 : -1;
 			}
 		});
-	
+
 	$: paginatedTasks = sortedTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 	$: allTaskIds = new Set(
 		tasks
@@ -89,21 +95,21 @@
 		const date = new Date(dateStr);
 		const today = new Date();
 		const isToday = date.toDateString() === today.toDateString();
-		
+
 		if (isToday) return 'วันนี้';
-		return date.toLocaleDateString('th-TH', { 
-			month: 'short', 
-			day: 'numeric' 
+		return date.toLocaleDateString('th-TH', {
+			month: 'short',
+			day: 'numeric'
 		});
 	}
 
 	function formatDateFull(dateStr: string) {
 		if (!dateStr) return '-';
 		const date = new Date(dateStr);
-		return date.toLocaleDateString('th-TH', { 
+		return date.toLocaleDateString('th-TH', {
 			year: 'numeric',
-			month: 'long', 
-			day: 'numeric' 
+			month: 'long',
+			day: 'numeric'
 		});
 	}
 
@@ -124,7 +130,8 @@
 		}
 	}
 
-	function getStatusClass(status: Task['status']) {
+	function getStatusClass(status: Task['status'], isArchived: boolean = false) {
+		if (isArchived) return 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50';
 		switch (status) {
 			case 'done': return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20';
 			case 'in-progress': return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20';
@@ -132,7 +139,8 @@
 		}
 	}
 
-	function getStatusLabel(status: Task['status']) {
+	function getStatusLabel(status: Task['status'], isArchived: boolean = false) {
+		if (isArchived) return 'Archived';
 		switch (status) {
 			case 'done': return 'เสร็จแล้ว';
 			case 'in-progress': return 'กำลังทำ';
@@ -190,8 +198,8 @@
 		expandedMobileCards = newSet;
 	}
 
-	function isOverdue(dateStr: string, status: Task['status']) {
-		if (status === 'done') return false;
+	function isOverdue(dateStr: string, status: Task['status'], isArchived: boolean = false) {
+		if (status === 'done' || isArchived) return false;
 		const date = new Date(dateStr);
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
@@ -276,6 +284,12 @@
 							<svelte:component this={getSortIcon('assignee')} size={12} class="lg:w-3.5 lg:h-3.5" />
 						</button>
 					</th>
+					<th class="px-3 py-2 lg:px-4 lg:py-3 text-left hidden xl:table-cell">
+						<span class="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">
+							<Flag size={12} class="lg:w-3.5 lg:h-3.5" />
+							Sprint
+						</span>
+					</th>
 					<th class="px-3 py-2 lg:px-4 lg:py-3 text-left">
 						<button
 							on:click={() => toggleSort('status')}
@@ -357,7 +371,7 @@
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
 							{#if task.assignee}
 								<div class="flex items-center gap-1.5 lg:gap-2">
-									<div 
+									<div
 										class="w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium text-white flex-shrink-0"
 										style="background-color: {task.assignee.color || '#6366F1'}"
 									>
@@ -371,21 +385,31 @@
 								<span class="text-gray-400 dark:text-gray-500 text-sm">-</span>
 							{/if}
 						</td>
+						<td class="px-3 py-2 lg:px-4 lg:py-3 hidden xl:table-cell">
+							{#if getSprintName(task.sprint_id)}
+								<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 truncate max-w-[100px]" title={getSprintName(task.sprint_id)}>
+									<Flag size={10} />
+									{getSprintName(task.sprint_id)}
+								</span>
+							{:else}
+								<span class="text-gray-400 dark:text-gray-500 text-sm">-</span>
+							{/if}
+						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
 							<button
 								on:click={() => handleStatusChange(task.id!, task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo')}
-								class="inline-flex items-center gap-1 lg:gap-1.5 px-2 py-0.5 lg:px-2.5 lg:py-1 rounded-full text-xs font-medium transition-colors {getStatusClass(task.status)} hover:opacity-80 whitespace-nowrap"
+								class="inline-flex items-center gap-1 lg:gap-1.5 px-2 py-0.5 lg:px-2.5 lg:py-1 rounded-full text-xs font-medium transition-colors {getStatusClass(task.status, task.is_archived)} hover:opacity-80 whitespace-nowrap"
 								title="คลิกเพื่อเปลี่ยนสถานะ"
 							>
 								<svelte:component this={getStatusIcon(task.status)} size={12} class="lg:w-4 lg:h-4" />
-								<span class="hidden sm:inline">{getStatusLabel(task.status)}</span>
+								<span class="hidden sm:inline">{getStatusLabel(task.status, task.is_archived)}</span>
 								<span class="sm:hidden">{task.status === 'done' ? 'เสร็จ' : task.status === 'in-progress' ? 'ทำ' : 'รอ'}</span>
 							</button>
 						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
-							<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap {isOverdue(task.date, task.status) ? 'text-red-600 dark:text-red-400 font-medium' : ''}">
+							<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap {isOverdue(task.date, task.status, task.is_archived) ? 'text-red-600 dark:text-red-400 font-medium' : ''}">
 								{formatDate(task.date)}
-								{#if isOverdue(task.date, task.status)}
+								{#if isOverdue(task.date, task.status, task.is_archived)}
 									<span class="ml-1 text-red-500">!</span>
 								{/if}
 							</span>
@@ -416,7 +440,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="9" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+						<td colspan="10" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
 							<div class="flex flex-col items-center gap-2">
 								<svg class="w-10 h-10 lg:w-12 lg:h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -479,21 +503,30 @@
 								<div class="flex flex-wrap items-center gap-2 mt-2">
 									<!-- Status -->
 									<button
-										on:click={() => handleStatusChange(task.id!, task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo')}
-										class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors {getStatusClass(task.status)}"
+										on:click={() => !task.is_archived && handleStatusChange(task.id!, task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo')}
+										class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors {getStatusClass(task.status, task.is_archived)}"
+										disabled={task.is_archived}
 									>
 										<svelte:component this={getStatusIcon(task.status)} size={12} />
-										{getStatusLabel(task.status)}
+										{getStatusLabel(task.status, task.is_archived)}
 									</button>
 
 									<!-- Due Date -->
-									<span class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 {isOverdue(task.date, task.status) ? 'text-red-600 dark:text-red-400 font-medium' : ''}">
+									<span class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 {isOverdue(task.date, task.status, task.is_archived) ? 'text-red-600 dark:text-red-400 font-medium' : ''}">
 										<Calendar size={12} />
 										{formatDate(task.date)}
-										{#if isOverdue(task.date, task.status)}
+										{#if isOverdue(task.date, task.status, task.is_archived)}
 											<span class="text-red-500">(เลยกำหนด)</span>
 										{/if}
 									</span>
+
+									<!-- Sprint -->
+									{#if getSprintName(task.sprint_id)}
+										<span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-xs">
+											<Flag size={10} />
+											{getSprintName(task.sprint_id)}
+										</span>
+									{/if}
 
 									<!-- Duration -->
 									{#if task.duration_minutes > 0}
@@ -524,13 +557,21 @@
 										<!-- Assignee -->
 										{#if task.assignee}
 											<div class="flex items-center gap-2">
-												<div 
+												<div
 													class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium text-white"
 													style="background-color: {task.assignee.color || '#6366F1'}"
 												>
 													{task.assignee.name.charAt(0)}
 												</div>
 												<span class="text-xs text-gray-700 dark:text-gray-300">{task.assignee.name}</span>
+											</div>
+										{/if}
+
+										<!-- Sprint -->
+										{#if getSprintName(task.sprint_id)}
+											<div class="flex items-center gap-2">
+												<Flag size={14} class="text-indigo-500 flex-shrink-0" />
+												<span class="text-xs text-gray-700 dark:text-gray-300">{getSprintName(task.sprint_id)}</span>
 											</div>
 										{/if}
 
@@ -567,10 +608,10 @@
 
 	<!-- Pagination -->
 	{#if tasks.length > 0}
-		<Pagination 
-			totalItems={tasks.length} 
-			bind:pageSize 
-			bind:currentPage 
+		<Pagination
+			totalItems={tasks.length}
+			bind:pageSize
+			bind:currentPage
 			pageSizeOptions={[20, 50, 100]}
 		/>
 	{/if}

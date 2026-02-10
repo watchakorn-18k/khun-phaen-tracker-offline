@@ -11,6 +11,15 @@ export interface Assignee {
 	created_at?: string;
 }
 
+export interface Sprint {
+	id?: number;
+	name: string;
+	start_date: string;
+	end_date: string;
+	status: 'active' | 'completed' | 'planned';
+	created_at?: string;
+}
+
 export interface Task {
 	id?: number;
 	title: string;
@@ -22,6 +31,8 @@ export interface Task {
 	notes: string;
 	assignee_id?: number | null;
 	assignee?: Assignee | null;
+	sprint_id?: number | null;
+	is_archived?: boolean;
 	created_at?: string;
 }
 
@@ -30,10 +41,12 @@ export type ViewMode = 'list' | 'calendar' | 'kanban' | 'table';
 export interface FilterOptions {
 	startDate?: string;
 	endDate?: string;
-	status?: Task['status'] | 'all';
+	status?: Task['status'] | 'all' | 'archived' | 'active';
 	category?: string | 'all';
 	project?: string | 'all';
 	assignee_id?: number | 'all' | null;
+	sprint_id?: number | 'all' | null;
+	includeArchived?: boolean;
 	search?: string;
 }
 

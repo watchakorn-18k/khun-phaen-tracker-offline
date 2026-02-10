@@ -1,48 +1,56 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import type { Task } from '$lib/types';
-	import { Calendar, Tag, FileText, Edit2, Trash2, MoreVertical, User, Folder } from 'lucide-svelte';
+	import type { Task, Sprint } from '$lib/types';
+	import { Calendar, Tag, FileText, Edit2, Trash2, MoreVertical, User, Folder, Flag, Archive } from 'lucide-svelte';
 	import Pagination from './Pagination.svelte';
-	
+
 	const dispatch = createEventDispatcher<{
 		edit: Task;
 		delete: number;
 		statusChange: { id: number; status: Task['status'] };
 	}>();
-	
+
 	export let tasks: Task[] = [];
-	
+	export let sprints: Sprint[] = [];
+
+	function getSprintName(sprintId: number | null | undefined): string | null {
+		if (!sprintId) return null;
+		return sprints.find(s => s.id === sprintId)?.name || null;
+	}
+
 	// Pagination
 	let pageSize = 50;
 	let currentPage = 1;
-	
+
 	$: paginatedTasks = tasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-	
+
 	function formatDate(dateStr: string): string {
 		const date = new Date(dateStr);
-		return date.toLocaleDateString('th-TH', { 
-			year: 'numeric', 
-			month: 'short', 
-			day: 'numeric' 
+		return date.toLocaleDateString('th-TH', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric'
 		});
 	}
-	
-	function getStatusColor(status: Task['status']): string {
+
+	function getStatusColor(status: Task['status'], isArchived: boolean = false): string {
+		if (isArchived) return 'bg-gray-200/50 text-gray-500 border-gray-300/30';
 		switch (status) {
 			case 'todo': return 'bg-warning/10 text-warning border-warning/30';
 			case 'in-progress': return 'bg-primary/10 text-primary border-primary/30';
 			case 'done': return 'bg-success/10 text-success border-success/30';
 		}
 	}
-	
-	function getStatusText(status: Task['status']): string {
+
+	function getStatusText(status: Task['status'], isArchived: boolean = false): string {
+		if (isArchived) return 'Archived';
 		switch (status) {
 			case 'todo': return 'รอดำเนินการ';
 			case 'in-progress': return 'กำลังทำ';
 			case 'done': return 'เสร็จแล้ว';
 		}
 	}
-	
+
 	let openMenuId: number | null | undefined = null;
 </script>
 
@@ -59,11 +67,11 @@
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 flex-wrap">
 							<h3 class="font-medium text-gray-900 dark:text-white truncate">{task.title}</h3>
-							<span class="px-2 py-0.5 text-xs rounded-full border {getStatusColor(task.status)}">
-								{getStatusText(task.status)}
+							<span class="px-2 py-0.5 text-xs rounded-full border {getStatusColor(task.status, task.is_archived)}">
+								{getStatusText(task.status, task.is_archived)}
 							</span>
 						</div>
-						
+
 						<div class="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
 							<span class="flex items-center gap-1">
 								<Calendar size={14} />
@@ -75,12 +83,24 @@
 									{task.project}
 								</span>
 							{/if}
+							{#if getSprintName(task.sprint_id) && !task.is_archived}
+								<span class="flex items-center gap-1 px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-xs">
+									<Flag size={12} />
+									{getSprintName(task.sprint_id)}
+								</span>
+							{/if}
+							{#if task.is_archived && getSprintName(task.sprint_id)}
+								<span class="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded text-xs border border-gray-200 dark:border-gray-600">
+									<Archive size={12} />
+									{getSprintName(task.sprint_id)}
+								</span>
+							{/if}
 							<span class="flex items-center gap-1">
 								<Tag size={14} />
 								{task.category}
 							</span>
 						</div>
-						
+
 						{#if task.notes}
 							<p class="mt-2 text-sm text-gray-600 dark:text-gray-300 flex items-start gap-1">
 								<FileText size={14} class="mt-0.5 flex-shrink-0" />
@@ -88,7 +108,7 @@
 							</p>
 						{/if}
 					</div>
-					
+
 					<div class="relative">
 						<button
 							on:click={() => openMenuId = openMenuId === task.id ? null : task.id}
@@ -139,13 +159,13 @@
 			</div>
 		{/each}
 	{/if}
-	
+
 	<!-- Pagination -->
 	{#if tasks.length > 0}
-		<Pagination 
-			totalItems={tasks.length} 
-			bind:pageSize 
-			bind:currentPage 
+		<Pagination
+			totalItems={tasks.length}
+			bind:pageSize
+			bind:currentPage
 			pageSizeOptions={[20, 50, 100]}
 		/>
 	{/if}

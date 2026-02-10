@@ -163,6 +163,8 @@ function createTables() {
 			category TEXT DEFAULT 'อื่นๆ',
 			notes TEXT DEFAULT '',
 			assignee_id INTEGER,
+			sprint_id INTEGER DEFAULT NULL,
+			is_archived INTEGER DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (assignee_id) REFERENCES assignees(id)
 		)
@@ -171,6 +173,20 @@ function createTables() {
 	// Try to add project column if table already exists without it
 	try {
 		db.run(`ALTER TABLE tasks ADD COLUMN project TEXT DEFAULT ''`);
+	} catch (e) {
+		// Column already exists
+	}
+	
+	// Try to add sprint_id column
+	try {
+		db.run(`ALTER TABLE tasks ADD COLUMN sprint_id INTEGER DEFAULT NULL`);
+	} catch (e) {
+		// Column already exists
+	}
+	
+	// Try to add is_archived column
+	try {
+		db.run(`ALTER TABLE tasks ADD COLUMN is_archived INTEGER DEFAULT 0`);
 	} catch (e) {
 		// Column already exists
 	}
@@ -216,8 +232,8 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<vo
 	if (!db) throw new Error('DB not initialized');
 	
 	db.run(
-		`INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
 			task.title,
 			task.project || '',
@@ -226,7 +242,9 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<vo
 			task.status,
 			task.category || 'อื่นๆ',
 			task.notes || '',
-			task.assignee_id || null
+			task.assignee_id || null,
+			task.sprint_id || null,
+			task.is_archived ? 1 : 0
 		]
 	);
 	
@@ -271,6 +289,14 @@ export async function updateTask(id: number, updates: Partial<Task>): Promise<vo
 		sets.push('assignee_id = ?');
 		values.push(updates.assignee_id);
 	}
+	if (updates.sprint_id !== undefined) {
+		sets.push('sprint_id = ?');
+		values.push(updates.sprint_id);
+	}
+	if (updates.is_archived !== undefined) {
+		sets.push('is_archived = ?');
+		values.push(updates.is_archived ? 1 : 0);
+	}
 	
 	if (sets.length === 0) return;
 	
@@ -312,7 +338,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 		query += ` AND t.date <= ?`;
 		params.push(filter.endDate);
 	}
-	if (filter?.status && filter.status !== 'all') {
+	if (filter?.status && filter.status !== 'all' && filter.status !== 'archived') {
 		query += ` AND t.status = ?`;
 		params.push(filter.status);
 	}
@@ -331,6 +357,21 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 			query += ` AND t.assignee_id = ?`;
 			params.push(filter.assignee_id);
 		}
+	}
+	if (filter?.sprint_id !== undefined && filter.sprint_id !== 'all') {
+		if (filter.sprint_id === null) {
+			query += ` AND t.sprint_id IS NULL`;
+		} else {
+			query += ` AND t.sprint_id = ?`;
+			params.push(filter.sprint_id);
+		}
+	}
+	// Handle archived tasks
+	if (filter?.status === 'archived') {
+		query += ` AND t.is_archived = 1`;
+	} else if (!filter?.includeArchived) {
+		// By default, exclude archived tasks
+		query += ` AND t.is_archived = 0`;
 	}
 	if (filter?.search) {
 		query += ` AND (LOWER(t.title) LIKE LOWER(?) OR LOWER(t.notes) LIKE LOWER(?))`;
@@ -353,6 +394,8 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 			category: obj.category as string,
 			notes: obj.notes as string,
 			assignee_id: obj.assignee_id as number | null,
+			sprint_id: obj.sprint_id as number | null,
+			is_archived: obj.is_archived === 1,
 			assignee: obj.a_id ? {
 				id: obj.a_id as number,
 				name: obj.a_name as string,
@@ -394,6 +437,8 @@ export async function getTaskById(id: number): Promise<Task | null> {
 		category: obj.category as string,
 		notes: obj.notes as string,
 		assignee_id: obj.assignee_id as number | null,
+		sprint_id: obj.sprint_id as number | null,
+		is_archived: obj.is_archived === 1,
 		assignee: obj.a_id ? {
 			id: obj.a_id as number,
 			name: obj.a_name as string,
@@ -531,6 +576,70 @@ export async function deleteProject(id: number): Promise<void> {
 	saveDatabase();
 }
 
+// ===== Sprint Functions =====
+
+export async function archiveTasksBySprint(sprintId: number): Promise<number> {
+	if (!db) throw new Error('DB not initialized');
+	
+	// Archive all done tasks in the sprint (keep original status, just mark as archived)
+	db.run(`
+		UPDATE tasks 
+		SET is_archived = 1
+		WHERE sprint_id = ? AND status = 'done' AND is_archived = 0
+	`, [sprintId]);
+	
+	// Get count of archived tasks
+	const result = execQuery(`
+		SELECT COUNT(*) as count FROM tasks 
+		WHERE sprint_id = ? AND is_archived = 1
+	`, [sprintId]);
+	
+	saveDatabase();
+	
+	return (result.values[0]?.[0] as number) || 0;
+}
+
+export async function getTasksBySprint(sprintId: number): Promise<Task[]> {
+	if (!db) throw new Error('DB not initialized');
+	
+	const result = execQuery(`
+		SELECT 
+			t.*,
+			a.id as a_id,
+			a.name as a_name,
+			a.color as a_color,
+			a.created_at as a_created_at
+		FROM tasks t
+		LEFT JOIN assignees a ON t.assignee_id = a.id
+		WHERE t.sprint_id = ?
+		ORDER BY t.date DESC, t.created_at DESC
+	`, [sprintId]);
+	
+	return result.values.map(row => {
+		const obj = Object.fromEntries(result.columns.map((col, i) => [col, row[i]]));
+		return {
+			id: obj.id as number,
+			title: obj.title as string,
+			project: obj.project as string,
+			duration_minutes: obj.duration_minutes as number,
+			date: obj.date as string,
+			status: obj.status as Task['status'],
+			category: obj.category as string,
+			notes: obj.notes as string,
+			assignee_id: obj.assignee_id as number | null,
+			sprint_id: obj.sprint_id as number | null,
+			is_archived: obj.is_archived === 1,
+			assignee: obj.a_id ? {
+				id: obj.a_id as number,
+				name: obj.a_name as string,
+				color: obj.a_color as string,
+				created_at: obj.a_created_at as string
+			} : null,
+			created_at: obj.created_at as string
+		};
+	});
+}
+
 // ===== Assignee Functions =====
 
 export async function getAssignees(): Promise<Assignee[]> {
@@ -626,7 +735,7 @@ export async function exportToCSV(): Promise<string> {
 	
 	if (result.values.length === 0) return '';
 	
-	const headers = ['id', 'title', 'project', 'duration_minutes', 'date', 'status', 'category', 'notes', 'assignee_id', 'created_at'];
+	const headers = ['id', 'title', 'project', 'duration_minutes', 'date', 'status', 'category', 'notes', 'assignee_id', 'sprint_id', 'is_archived', 'created_at'];
 	const csvRows = [headers.join(',')];
 	
 	for (const row of result.values) {
@@ -697,8 +806,8 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 				// Use REPLACE INTO to handle duplicate IDs
 				if (row.id) {
 					db.run(`
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						parseInt(row.id),
 						row.title || '',
@@ -709,12 +818,14 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 						row.category || 'อื่นๆ',
 						row.notes || '',
 						row.assignee_id ? parseInt(row.assignee_id) : null,
+						row.sprint_id ? parseInt(row.sprint_id) : null,
+						row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0,
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
 					db.run(`
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						row.title || '',
 						row.project || '',
@@ -723,7 +834,9 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 						row.status || 'todo',
 						row.category || 'อื่นๆ',
 						row.notes || '',
-						row.assignee_id ? parseInt(row.assignee_id) : null
+						row.assignee_id ? parseInt(row.assignee_id) : null,
+						row.sprint_id ? parseInt(row.sprint_id) : null,
+						row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0
 					]);
 				}
 				imported++;
@@ -831,8 +944,8 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 				// New task - insert
 				try {
 					db.run(`
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						row.title || '',
 						row.project || '',
@@ -842,6 +955,8 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 						row.category || 'อื่นๆ',
 						row.notes || '',
 						row.assignee_id ? parseInt(row.assignee_id) : null,
+						row.sprint_id ? parseInt(row.sprint_id) : null,
+						row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0,
 						row.created_at || new Date().toISOString()
 					]);
 					added++;
@@ -853,12 +968,14 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 				const serverDate = new Date(row.created_at || 0).getTime();
 				const localDate = new Date(existing.created_at || 0).getTime();
 				
-				// Check if content is different
+				// Check if content is different (include sprint_id and is_archived)
 				const isDifferent = 
 					row.title !== existing.title ||
 					row.status !== existing.status ||
 					row.project !== existing.project ||
-					(row.notes || '') !== (existing.notes || '');
+					(row.notes || '') !== (existing.notes || '') ||
+					(row.sprint_id ? parseInt(row.sprint_id) : null) !== existing.sprint_id ||
+					(row.is_archived === '1' || row.is_archived === 'true') !== (existing.is_archived === 1);
 				
 				if (isDifferent && serverDate >= localDate) {
 					// Server version is newer or same age but different - update
@@ -867,7 +984,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
-							    assignee_id = ?, created_at = ?
+							    assignee_id = ?, sprint_id = ?, is_archived = ?, created_at = ?
 							WHERE id = ?
 						`, [
 							row.title || '',
@@ -878,6 +995,8 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 							row.category || 'อื่นๆ',
 							row.notes || '',
 							row.assignee_id ? parseInt(row.assignee_id) : null,
+							row.sprint_id ? parseInt(row.sprint_id) : null,
+							row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0,
 							row.created_at || new Date().toISOString(),
 							serverId
 						]);
@@ -947,8 +1066,21 @@ export async function exportAllData(): Promise<string> {
 	const projectsResult = execQuery('SELECT * FROM projects ORDER BY name');
 	const assigneesResult = execQuery('SELECT * FROM assignees ORDER BY name');
 	
-	// Build tasks CSV section with assignee_name
-	const taskHeaders = ['id', 'title', 'project', 'duration_minutes', 'date', 'status', 'category', 'notes', 'assignee_id', 'assignee_name', 'created_at'];
+	// Get sprints from localStorage
+	let sprints: any[] = [];
+	if (typeof window !== 'undefined') {
+		try {
+			const saved = localStorage.getItem('sprints-data-v1');
+			if (saved) {
+				sprints = JSON.parse(saved);
+			}
+		} catch (e) {
+			console.warn('Failed to load sprints for export:', e);
+		}
+	}
+	
+	// Build tasks CSV section with assignee_name, sprint_id, is_archived
+	const taskHeaders = ['id', 'title', 'project', 'duration_minutes', 'date', 'status', 'category', 'notes', 'assignee_id', 'assignee_name', 'sprint_id', 'is_archived', 'created_at'];
 	const csvRows: string[] = [];
 	
 	// Add tasks section
@@ -1009,6 +1141,25 @@ export async function exportAllData(): Promise<string> {
 		csvRows.push(values.join(','));
 	}
 	
+	// Add sprints section
+	csvRows.push('');
+	csvRows.push('# SPRINTS');
+	const sprintHeaders = ['id', 'name', 'start_date', 'end_date', 'status', 'created_at'];
+	csvRows.push(sprintHeaders.join(','));
+	
+	for (const sprint of sprints) {
+		const values = sprintHeaders.map(h => {
+			const val = (sprint as any)[h];
+			if (val === null || val === undefined) return '';
+			const str = String(val);
+			if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+				return `"${str.replace(/"/g, '""')}"`;
+			}
+			return str;
+		});
+		csvRows.push(values.join(','));
+	}
+	
 	return csvRows.join('\n');
 }
 
@@ -1032,12 +1183,13 @@ export async function importAllData(csvContent: string, options: { clearExisting
 	}
 	
 	// Parse sections
-	let currentSection: 'tasks' | 'projects' | 'assignees' | null = null;
+	let currentSection: 'tasks' | 'projects' | 'assignees' | 'sprints' | null = null;
 	let currentHeaders: string[] = [];
 	
 	const taskRows: Record<string, string>[] = [];
 	const projectRows: Record<string, string>[] = [];
 	const assigneeRows: Record<string, string>[] = [];
+	const sprintRows: Record<string, string>[] = [];
 	
 	for (const line of lines) {
 		const trimmedLine = line.trim();
@@ -1054,6 +1206,10 @@ export async function importAllData(csvContent: string, options: { clearExisting
 			continue;
 		} else if (trimmedLine.startsWith('# ASSIGNEES')) {
 			currentSection = 'assignees';
+			currentHeaders = [];
+			continue;
+		} else if (trimmedLine.startsWith('# SPRINTS')) {
+			currentSection = 'sprints';
 			currentHeaders = [];
 			continue;
 		}
@@ -1083,6 +1239,8 @@ export async function importAllData(csvContent: string, options: { clearExisting
 			projectRows.push(row);
 		} else if (currentSection === 'assignees') {
 			assigneeRows.push(row);
+		} else if (currentSection === 'sprints') {
+			sprintRows.push(row);
 		}
 	}
 	
@@ -1106,6 +1264,55 @@ export async function importAllData(csvContent: string, options: { clearExisting
 			db.run('DELETE FROM tasks');
 			db.run('DELETE FROM projects');
 			db.run('DELETE FROM assignees');
+			// Clear sprints from localStorage
+			if (typeof window !== 'undefined') {
+				localStorage.removeItem('sprints-data-v1');
+			}
+		}
+		
+		// Import sprints first (tasks may reference them)
+		const importedSprints: any[] = [];
+		for (const row of sprintRows) {
+			try {
+				const sprint: any = {
+					id: row.id ? parseInt(row.id) : Date.now() + Math.floor(Math.random() * 1000),
+					name: row.name || '',
+					start_date: row.start_date || new Date().toISOString().split('T')[0],
+					end_date: row.end_date || new Date().toISOString().split('T')[0],
+					status: row.status || 'planned',
+					created_at: row.created_at || new Date().toISOString()
+				};
+				importedSprints.push(sprint);
+			} catch (e) {
+				console.warn('Failed to import sprint:', row, e);
+			}
+		}
+		
+		// Save sprints to localStorage
+		if (importedSprints.length > 0 && typeof window !== 'undefined') {
+			try {
+				const existingData = localStorage.getItem('sprints-data-v1');
+				let existingSprints: any[] = [];
+				if (existingData) {
+					existingSprints = JSON.parse(existingData);
+				}
+				
+				// Merge sprints, avoid duplicates by id
+				const sprintMap = new Map(existingSprints.map(s => [s.id, s]));
+				for (const sprint of importedSprints) {
+					// If clearing, just use imported. Otherwise merge.
+					if (options.clearExisting !== false) {
+						sprintMap.set(sprint.id, sprint);
+					} else if (!sprintMap.has(sprint.id)) {
+						sprintMap.set(sprint.id, sprint);
+					}
+				}
+				
+				localStorage.setItem('sprints-data-v1', JSON.stringify(Array.from(sprintMap.values())));
+				console.log(`✅ Imported ${importedSprints.length} sprints`);
+			} catch (e) {
+				console.warn('Failed to save sprints:', e);
+			}
 		}
 		
 		// Import projects first (tasks may reference them)
@@ -1206,11 +1413,15 @@ export async function importAllData(csvContent: string, options: { clearExisting
 				const rowId = row.id ? parseInt(row.id) : null;
 				const shouldUseExistingId = options.useExistingIds === true && rowId && !existingIds.has(rowId);
 				
+				// Parse sprint_id and is_archived
+				const sprintId = row.sprint_id ? parseInt(row.sprint_id) : null;
+				const isArchived = row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0;
+				
 				if (shouldUseExistingId) {
 					// Use REPLACE for sync with existing IDs
 					db.run(`
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						rowId,
 						row.title || '',
@@ -1221,13 +1432,15 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						row.category || 'อื่นๆ',
 						row.notes || '',
 						assigneeId,
+						sprintId,
+						isArchived,
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
 					// Always INSERT as new task (ignore ID from file)
 					db.run(`
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						row.title || '',
 						row.project || '',
@@ -1236,7 +1449,9 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						row.status || 'todo',
 						row.category || 'อื่นๆ',
 						row.notes || '',
-						assigneeId
+						assigneeId,
+						sprintId,
+						isArchived
 					]);
 				}
 				tasksImported++;
@@ -1248,7 +1463,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 		db.run('COMMIT');
 		saveDatabase();
 		
-		console.log(`✅ Import complete: ${tasksImported} tasks, ${projectsImported} projects, ${assigneesImported} assignees`);
+		console.log(`✅ Import complete: ${tasksImported} tasks, ${projectsImported} projects, ${assigneesImported} assignees, ${sprintRows.length} sprints`);
 		
 		return { tasks: tasksImported, projects: projectsImported, assignees: assigneesImported };
 	} catch (e) {
@@ -1267,6 +1482,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 	tasks: { added: number; updated: number; unchanged: number };
 	projects: { added: number; updated: number };
 	assignees: { added: number; updated: number };
+	sprints: { added: number; updated: number };
 }> {
 	if (!db) throw new Error('DB not initialized');
 	
@@ -1276,7 +1492,8 @@ export async function mergeAllData(csvContent: string): Promise<{
 		return { 
 			tasks: { added: 0, updated: 0, unchanged: 0 },
 			projects: { added: 0, updated: 0 },
-			assignees: { added: 0, updated: 0 }
+			assignees: { added: 0, updated: 0 },
+			sprints: { added: 0, updated: 0 }
 		};
 	}
 	
@@ -1306,6 +1523,10 @@ export async function mergeAllData(csvContent: string): Promise<{
 			currentSection = 'assignees';
 			currentHeaders = [];
 			continue;
+		} else if (trimmedLine.startsWith('# SPRINTS')) {
+			currentSection = 'sprints';
+			currentHeaders = [];
+			continue;
 		}
 		
 		if (!currentSection) continue;
@@ -1324,6 +1545,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 		if (currentSection === 'tasks') taskRows.push(row);
 		else if (currentSection === 'projects') projectRows.push(row);
 		else if (currentSection === 'assignees') assigneeRows.push(row);
+		else if (currentSection === 'sprints') sprintRows.push(row);
 	}
 	
 	// If no sections found, treat as old format (tasks only)
@@ -1437,6 +1659,67 @@ export async function mergeAllData(csvContent: string): Promise<{
 			if (serverId) existingAssignees.delete(serverId);
 		}
 		
+		// Merge sprints
+		let sprintsAdded = 0, sprintsUpdated = 0;
+		const existingSprints = new Map();
+		if (typeof window !== 'undefined') {
+			try {
+				const saved = localStorage.getItem('sprints-data-v1');
+				if (saved) {
+					const sprints = JSON.parse(saved);
+					for (const sprint of sprints) {
+						existingSprints.set(sprint.id, sprint);
+					}
+				}
+			} catch (e) {
+				console.warn('Failed to load existing sprints:', e);
+			}
+		}
+		
+		for (const row of sprintRows) {
+			const serverId = row.id ? parseInt(row.id) : null;
+			const existing = serverId ? existingSprints.get(serverId) : null;
+			
+			if (!existing) {
+				// New sprint
+				const newSprint = {
+					id: serverId || Date.now() + Math.floor(Math.random() * 1000),
+					name: row.name || '',
+					start_date: row.start_date || new Date().toISOString().split('T')[0],
+					end_date: row.end_date || new Date().toISOString().split('T')[0],
+					status: row.status || 'planned',
+					created_at: row.created_at || new Date().toISOString()
+				};
+				existingSprints.set(newSprint.id, newSprint);
+				sprintsAdded++;
+			} else {
+				// Check if different
+				const isDifferent = 
+					existing.name !== row.name ||
+					existing.start_date !== row.start_date ||
+					existing.end_date !== row.end_date ||
+					existing.status !== row.status;
+				
+				if (isDifferent) {
+					existing.name = row.name || existing.name;
+					existing.start_date = row.start_date || existing.start_date;
+					existing.end_date = row.end_date || existing.end_date;
+					existing.status = row.status || existing.status;
+					sprintsUpdated++;
+				}
+			}
+		}
+		
+		// Save merged sprints back to localStorage
+		if (sprintRows.length > 0 && typeof window !== 'undefined') {
+			try {
+				localStorage.setItem('sprints-data-v1', JSON.stringify(Array.from(existingSprints.values())));
+				console.log(`✅ Merged sprints: +${sprintsAdded} ~${sprintsUpdated}`);
+			} catch (e) {
+				console.warn('Failed to save merged sprints:', e);
+			}
+		}
+		
 		// Helper function to resolve assignee_id from assignee_name
 		function resolveAssigneeId(row: Record<string, string>): number | null {
 			if (row.assignee_id) {
@@ -1475,8 +1758,8 @@ export async function mergeAllData(csvContent: string): Promise<{
 			if (!existing) {
 				try {
 					db.run(`
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
 						row.title || '',
 						row.project || '',
@@ -1497,7 +1780,9 @@ export async function mergeAllData(csvContent: string): Promise<{
 					row.title !== existing.title ||
 					row.status !== existing.status ||
 					row.project !== existing.project ||
-					(row.notes || '') !== (existing.notes || '');
+					(row.notes || '') !== (existing.notes || '') ||
+					(row.sprint_id ? parseInt(row.sprint_id) : null) !== existing.sprint_id ||
+					(row.is_archived === '1' || row.is_archived === 'true') !== (existing.is_archived === 1);
 				
 				const serverDate = new Date(row.created_at || 0).getTime();
 				const localDate = new Date(existing.created_at || 0).getTime();
@@ -1508,7 +1793,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
-							    assignee_id = ?, created_at = ?
+							    assignee_id = ?, sprint_id = ?, is_archived = ?, created_at = ?
 							WHERE id = ?
 						`, [
 							row.title || '',
@@ -1519,6 +1804,8 @@ export async function mergeAllData(csvContent: string): Promise<{
 							row.category || 'อื่นๆ',
 							row.notes || '',
 							assigneeId,
+							row.sprint_id ? parseInt(row.sprint_id) : null,
+							row.is_archived === '1' || row.is_archived === 'true' ? 1 : 0,
 							row.created_at || new Date().toISOString(),
 							serverId
 						]);
@@ -1540,11 +1827,13 @@ export async function mergeAllData(csvContent: string): Promise<{
 		console.log(`   Tasks: +${tasksAdded} ~${tasksUpdated} =${tasksUnchanged}`);
 		console.log(`   Projects: +${projectsAdded} ~${projectsUpdated}`);
 		console.log(`   Assignees: +${assigneesAdded} ~${assigneesUpdated}`);
+		console.log(`   Sprints: +${sprintsAdded} ~${sprintsUpdated}`);
 		
 		return {
 			tasks: { added: tasksAdded, updated: tasksUpdated, unchanged: tasksUnchanged },
 			projects: { added: projectsAdded, updated: projectsUpdated },
-			assignees: { added: assigneesAdded, updated: assigneesUpdated }
+			assignees: { added: assigneesAdded, updated: assigneesUpdated },
+			sprints: { added: sprintsAdded, updated: sprintsUpdated }
 		};
 	} catch (e) {
 		db.run('ROLLBACK');

@@ -31,6 +31,7 @@
 		category: 'all',
 		project: 'all',
 		assignee_id: 'all',
+		sprint_id: 'all',
 		search: ''
 	};
 	
@@ -72,8 +73,11 @@
 			// Reload data to show merged results
 			await loadData();
 			
+			// Refresh sprints from localStorage
+			sprints.refresh();
+			
 			// Show message
-			showMessage(`Merge สำเร็จ: เพิ่ม ${result.tasks.added} งาน, ${result.projects.added} โปรเจค, ${result.assignees.added} ผู้รับผิดชอบ`);
+			showMessage(`Merge สำเร็จ: เพิ่ม ${result.tasks.added} งาน, ${result.projects.added} โปรเจค, ${result.assignees.added} ผู้รับผิดชอบ, ${result.sprints.added} Sprint`);
 			
 			return result;
 		});
@@ -478,6 +482,9 @@
 			const afterStats = await getStats();
 			console.log('📊 After import:', afterStats);
 			
+			// Refresh sprints from localStorage
+			sprints.refresh();
+			
 			const actualAdded = afterStats.total - beforeStats.total;
 			showMessage(`นำเข้าสำเร็จ ${result.tasks} งาน (เพิ่มใหม่ ${actualAdded} งาน), ${result.projects} โปรเจค, ${result.assignees} ผู้รับผิดชอบ`);
 		} catch (e) {
@@ -489,13 +496,15 @@
 	function persistFilters() {
 		if (typeof localStorage === 'undefined') return;
 		const assigneeValue = filters.assignee_id === undefined ? 'all' : filters.assignee_id;
+		const sprintValue = filters.sprint_id === undefined ? 'all' : filters.sprint_id;
 		const data = {
 			startDate: filters.startDate || '',
 			endDate: filters.endDate || '',
 			status: filters.status || 'all',
 			category: filters.category || 'all',
 			project: filters.project || 'all',
-			assignee_id: assigneeValue
+			assignee_id: assigneeValue,
+			sprint_id: sprintValue
 		};
 		localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(data));
 	}
@@ -514,7 +523,8 @@
 				status: saved.status ?? 'all',
 				category: saved.category ?? 'all',
 				project: saved.project ?? 'all',
-				assignee_id: saved.assignee_id !== undefined ? saved.assignee_id : 'all'
+				assignee_id: saved.assignee_id !== undefined ? saved.assignee_id : 'all',
+				sprint_id: saved.sprint_id !== undefined ? saved.sprint_id : 'all'
 			};
 		} catch {
 			localStorage.removeItem(FILTER_STORAGE_KEY);
@@ -834,6 +844,7 @@
 		{editingTask}
 		{assignees}
 		projects={projectList}
+		sprints={$sprints}
 		on:submit={handleAddTask}
 		on:close={cancelEdit}
 		on:addAssignee={handleAddAssignee}
@@ -844,6 +855,7 @@
 		{#if currentView === 'list'}
 			<TaskList
 				tasks={filteredTasks}
+				sprints={$sprints}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:statusChange={handleStatusChange}
@@ -856,6 +868,7 @@
 		{:else if currentView === 'kanban'}
 			<KanbanBoard
 				tasks={filteredTasks}
+				sprints={$sprints}
 				on:move={handleKanbanMove}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
@@ -863,6 +876,7 @@
 		{:else if currentView === 'table'}
 			<TableView
 				tasks={filteredTasks}
+				sprints={$sprints}
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:deleteSelected={handleDeleteSelectedTasks}
