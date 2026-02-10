@@ -149,7 +149,7 @@
                                 {#each $serverPeers as peer}
                                     <li class="text-xs flex items-center gap-2 pl-4">
                                         <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                                        <span class="font-mono">{peer.slice(0, 8)}...</span>
+                                        <span>{peer.name}</span>
                                     </li>
                                 {/each}
                             </ul>

@@ -48,7 +48,7 @@ export const serverUrl = writable<string>('');
 export const serverStatus = writable<'disconnected' | 'connecting' | 'connected'>('disconnected');
 export const serverRoomCode = writable<string>('');
 export const isServerHost = writable<boolean>(false);
-export const serverPeers = writable<string[]>([]);
+export const serverPeers = writable<{ id: string; name: string }[]>([]);
 export const lastServerSync = writable<Date | null>(null);
 export const syncMessage = writable<string>('');
 
@@ -263,13 +263,17 @@ function handleServerMessage(msg: any) {
 
         case 'room_info':
             serverRoomCode.set(msg.room_code);
-            serverPeers.set(msg.peers.map((p: any) => p.id));
+            serverPeers.set(msg.peers.map((p: any) => ({ 
+                id: p.id, 
+                name: p.metadata?.name || p.id 
+            })));
             console.log('Room info:', msg.peers.length, 'peers');
             break;
 
         case 'peer_joined':
-            serverPeers.update(peers => [...peers, msg.peer.id]);
-            syncMessage.set('มีผู้เข้าร่วม: ' + msg.peer.id.substring(0, 8));
+            const peerName = msg.peer.metadata?.name || msg.peer.id;
+            serverPeers.update(peers => [...peers, { id: msg.peer.id, name: peerName }]);
+            syncMessage.set('มีผู้เข้าร่วม: ' + peerName);
             setTimeout(() => syncMessage.set(''), 3000);
             
             // If host, sync document to new peer immediately
@@ -280,8 +284,9 @@ function handleServerMessage(msg: any) {
             break;
 
         case 'peer_left':
-            serverPeers.update(peers => peers.filter(p => p !== msg.peer_id));
-            syncMessage.set('ผู้เข้าร่วมออก: ' + msg.peer_id.substring(0, 8));
+            serverPeers.update(peers => peers.filter(p => p.id !== msg.peer_id));
+            const leftPeer = get(serverPeers).find(p => p.id === msg.peer_id);
+            syncMessage.set('ผู้เข่าร่วมออก: ' + (leftPeer?.name || msg.peer_id).substring(0, 20));
             setTimeout(() => syncMessage.set(''), 3000);
             break;
 
