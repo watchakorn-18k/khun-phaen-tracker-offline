@@ -361,7 +361,10 @@
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
 			link.setAttribute('href', url);
-			link.setAttribute('download', `tasks_${new Date().toISOString().split('T')[0]}.csv`);
+			const now = new Date();
+		const dateStr = now.toISOString().split('T')[0];
+		const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+		link.setAttribute('download', `tasks_${dateStr}_${timeStr}.csv`);
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
