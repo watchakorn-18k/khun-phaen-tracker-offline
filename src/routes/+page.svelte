@@ -279,7 +279,8 @@
 			assignees = await getAssignees();
 			workerStats = await getAssigneeStats();
 		} catch (e) {
-			showMessage('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+			console.error('❌ loadData failed:', e);
+			showMessage(`เกิดข้อผิดพลาดในการโหลดข้อมูล: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
 		}
 	}
 	
@@ -488,7 +489,8 @@
 			await loadData();
 			showForm = false;
 		} catch (e) {
-			showMessage('เกิดข้อผิดพลาด', 'error');
+			console.error('❌ handleAddTask failed:', e);
+			showMessage(`เกิดข้อผิดพลาด: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
 		}
 	}
 	
@@ -1341,6 +1343,90 @@
 		ctx.globalAlpha = 1;
 	}
 
+	type ExportAudioBed = {
+		track: MediaStreamTrack;
+		stop: () => void;
+	};
+
+	function createRoyaltyFreeAudioBed(totalDuration: number): ExportAudioBed | null {
+		try {
+			const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+			if (!AudioCtor) return null;
+			const audioContext = new AudioCtor();
+			const destination = audioContext.createMediaStreamDestination();
+			const master = audioContext.createGain();
+			const filter = audioContext.createBiquadFilter();
+			const limiter = audioContext.createDynamicsCompressor();
+
+			filter.type = 'lowpass';
+			filter.frequency.value = 1500;
+			limiter.threshold.value = -20;
+			limiter.knee.value = 24;
+			limiter.ratio.value = 10;
+			limiter.attack.value = 0.003;
+			limiter.release.value = 0.15;
+			master.gain.value = 0.3;
+
+			master.connect(filter);
+			filter.connect(limiter);
+			limiter.connect(destination);
+
+			const notes = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
+			const startAt = audioContext.currentTime + 0.05;
+			const beat = 0.5;
+			const totalBeats = Math.max(1, Math.floor(totalDuration / beat));
+			for (let i = 0; i < totalBeats; i++) {
+				const t = startAt + i * beat;
+				const leadFreq = notes[i % notes.length];
+				const bassFreq = notes[(i + 3) % notes.length] / 2;
+
+				const lead = audioContext.createOscillator();
+				lead.type = 'triangle';
+				lead.frequency.setValueAtTime(leadFreq, t);
+				const leadGain = audioContext.createGain();
+				leadGain.gain.setValueAtTime(0.0001, t);
+				leadGain.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+				leadGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+				lead.connect(leadGain);
+				leadGain.connect(master);
+				lead.start(t);
+				lead.stop(t + 0.45);
+
+				const bass = audioContext.createOscillator();
+				bass.type = 'sine';
+				bass.frequency.setValueAtTime(bassFreq, t);
+				const bassGain = audioContext.createGain();
+				bassGain.gain.setValueAtTime(0.0001, t);
+				bassGain.gain.exponentialRampToValueAtTime(0.055, t + 0.03);
+				bassGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.48);
+				bass.connect(bassGain);
+				bassGain.connect(master);
+				bass.start(t);
+				bass.stop(t + 0.5);
+			}
+
+			const endAt = startAt + totalBeats * beat + 0.2;
+			const stop = () => {
+				try {
+					audioContext.suspend().catch(() => undefined);
+					audioContext.close().catch(() => undefined);
+				} catch {
+					// Ignore close failures because video export can still finish without audio cleanup.
+				}
+			};
+			window.setTimeout(stop, Math.max(1000, Math.ceil((endAt - audioContext.currentTime) * 1000) + 300));
+
+			const [track] = destination.stream.getAudioTracks();
+			if (!track) {
+				stop();
+				return null;
+			}
+			return { track, stop };
+		} catch {
+			return null;
+		}
+	}
+
 	async function handleExportVideo(event?: CustomEvent<number | void>, contextOverride?: { taskSnapshot: Task[]; scopeLabel: string }) {
 		try {
 			if (typeof MediaRecorder === 'undefined') {
@@ -1429,6 +1515,10 @@
 			const totalDuration = slides.length * slideDuration;
 			const totalFrames = Math.ceil(totalDuration * fps);
 			const stream = canvas.captureStream(fps);
+			const audioBed = createRoyaltyFreeAudioBed(totalDuration);
+			if (audioBed) {
+				stream.addTrack(audioBed.track);
+			}
 			const exportStart = performance.now();
 			videoExportInProgress = true;
 			videoExportPercent = 0;
@@ -1476,6 +1566,7 @@
 			await new Promise((resolve) => setTimeout(resolve, 120));
 			recorder.stop();
 			await stopPromise;
+			audioBed?.stop();
 			stream.getTracks().forEach((track) => track.stop());
 
 			const blob = new Blob(chunks, { type: mimeType });
@@ -2162,6 +2253,10 @@
 			const totalDuration = totalSlides * slideDuration;
 			const totalFrames = Math.ceil(totalDuration * fps);
 			const stream = canvas.captureStream(fps);
+			const audioBed = createRoyaltyFreeAudioBed(totalDuration);
+			if (audioBed) {
+				stream.addTrack(audioBed.track);
+			}
 
 			const exportStart = performance.now();
 			videoExportInProgress = true;
@@ -2239,6 +2334,7 @@
 			await new Promise((resolve) => setTimeout(resolve, 120));
 			recorder.stop();
 			await stopPromise;
+			audioBed?.stop();
 			stream.getTracks().forEach((track) => track.stop());
 
 			const blob = new Blob(chunks, { type: mimeType });

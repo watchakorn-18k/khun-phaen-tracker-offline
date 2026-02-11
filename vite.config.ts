@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	optimizeDeps: {
-		exclude: ['@duckdb/duckdb-wasm']
+		exclude: ['@duckdb/duckdb-wasm', '@sqlite.org/sqlite-wasm']
 	},
 	build: {
 		target: 'esnext'

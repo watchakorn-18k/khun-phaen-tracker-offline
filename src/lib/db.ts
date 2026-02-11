@@ -1,45 +1,95 @@
 import type { Task, Project, Assignee, FilterOptions } from './types';
-import initSqlJs from 'sql.js';
-import { base } from '$app/paths';
+import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import * as lz4 from 'lz4js';
 import { getItem, setItem, initCompression, compressionReady } from './stores/storage';
 import { get } from 'svelte/store';
 import { syncTaskToCRDT, deleteTaskFromCRDT, initCRDT } from './stores/crdt-sync';
 
 // SQLite database instance
 let db: any = null;
-let SQL: any = null;
+let sqlite3: any = null;
 let isInitializing = false;
 
-const DB_NAME = 'task-tracker-db';
+const DB_NAME = 'task-tracker-db-v2';
+const LEGACY_DB_NAME = 'task-tracker-db';
+const LEGACY_DB_BACKUP_NAME = 'task-tracker-db-backup-before-v2';
+const MIGRATION_FLAG = 'task-tracker-db-migrated-to-v2';
 
 // Initialize compression on module load (JS only, no WASM)
 if (typeof window !== 'undefined') {
 	initCompression(); // JS compression, no delay needed
 }
 
-function loadDatabase(): Uint8Array | null {
+function base64ToBytes(base64: string): Uint8Array {
+	const binaryString = atob(base64);
+	const bytes = new Uint8Array(binaryString.length);
+	for (let i = 0; i < binaryString.length; i++) {
+		bytes[i] = binaryString.charCodeAt(i);
+	}
+	return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+	return btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+}
+
+function isSqliteHeader(bytes: Uint8Array): boolean {
+	if (bytes.length < 16) return false;
+	const header = 'SQLite format 3\u0000';
+	for (let i = 0; i < header.length; i++) {
+		if (bytes[i] !== header.charCodeAt(i)) return false;
+	}
+	return true;
+}
+
+function decodeLegacyLz4String(base64Data: string): string | null {
 	try {
-		const stored = getItem(DB_NAME);
+		const compressed = base64ToBytes(base64Data);
+		if (compressed.length < 5) return null;
+		const outLen =
+			(compressed[0] | (compressed[1] << 8) | (compressed[2] << 16) | (compressed[3] << 24)) >>> 0;
+		if (!outLen || outLen > 64 * 1024 * 1024) return null;
+		const out = new Uint8Array(outLen);
+		const written = (lz4 as any).decompressBlock(compressed, out, 4, compressed.length - 4, 0);
+		if (!written || written <= 0) return null;
+		return new TextDecoder().decode(out.subarray(0, written));
+	} catch {
+		return null;
+	}
+}
+
+function loadDatabase(key: string): Uint8Array | null {
+	try {
+		const stored = getItem(key);
 		if (stored) {
-			const binaryString = atob(stored);
-			const bytes = new Uint8Array(binaryString.length);
-			for (let i = 0; i < binaryString.length; i++) {
-				bytes[i] = binaryString.charCodeAt(i);
+			// Preferred path: stored as raw base64 of sqlite bytes.
+			const directBytes = base64ToBytes(stored);
+			if (isSqliteHeader(directBytes)) {
+				return directBytes;
 			}
-			return bytes;
+
+			// Legacy path: value was LZ4-compressed (WASM) string containing base64 bytes.
+			const legacyDecoded = decodeLegacyLz4String(stored);
+			if (legacyDecoded) {
+				const legacyBytes = base64ToBytes(legacyDecoded);
+				if (isSqliteHeader(legacyBytes)) {
+					return legacyBytes;
+				}
+			}
+
+			throw new Error(`Unsupported database encoding for key: ${key}`);
 		}
 	} catch (e) {
-		console.log('No existing database found');
+		console.warn(`Failed to load database for key: ${key}`, e);
 	}
 	return null;
 }
 
 function saveDatabase() {
-	if (!db) return;
+	if (!db || !sqlite3) return;
 	try {
-		const data = db.export();
-		const binaryString = String.fromCharCode.apply(null, Array.from(data));
-		setItem(DB_NAME, btoa(binaryString));
+		const data = sqlite3.capi.sqlite3_js_db_export(db);
+		setItem(DB_NAME, bytesToBase64(data));
 		
 		// Log compression status
 		if (get(compressionReady)) {
@@ -47,6 +97,65 @@ function saveDatabase() {
 		}
 	} catch (e) {
 		console.error('Failed to save database:', e);
+	}
+}
+
+function openDatabaseFromBytes(bytes?: Uint8Array | null): any {
+	if (!sqlite3) {
+		throw new Error('SQLite module not initialized');
+	}
+	const nextDb = new sqlite3.oo1.DB(':memory:', 'c');
+	if (!bytes || bytes.length === 0) {
+		return nextDb;
+	}
+
+	const ptr = sqlite3.wasm.allocFromTypedArray(bytes);
+	const rc = sqlite3.capi.sqlite3_deserialize(
+		nextDb.pointer,
+		'main',
+		ptr,
+		bytes.byteLength,
+		bytes.byteLength,
+		sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE
+	);
+	nextDb.checkRc(rc);
+	return nextDb;
+}
+
+function getTaskCountFromBytes(bytes: Uint8Array): number {
+	if (!sqlite3) return -1;
+	const tempDb = openDatabaseFromBytes(bytes);
+	try {
+		const count = Number(tempDb.selectValue('SELECT COUNT(*) FROM tasks')) || 0;
+		return count;
+	} catch {
+		return -1;
+	} finally {
+		tempDb.close();
+	}
+}
+
+function runSql(sql: string, params?: any[], targetDb: any = db): void {
+	if (!targetDb) throw new Error('DB not initialized');
+	if (params && params.length > 0) {
+		targetDb.exec({ sql, bind: params });
+		return;
+	}
+	targetDb.exec(sql);
+}
+
+function backupLegacyDbOnce(): void {
+	if (typeof window === 'undefined') return;
+	const migrated = localStorage.getItem(MIGRATION_FLAG);
+	const legacyRaw = localStorage.getItem(LEGACY_DB_NAME);
+	const currentRaw = localStorage.getItem(DB_NAME);
+	if (migrated || !legacyRaw || currentRaw) return;
+	try {
+		localStorage.setItem(LEGACY_DB_BACKUP_NAME, legacyRaw);
+		localStorage.setItem(MIGRATION_FLAG, new Date().toISOString());
+		console.log('🛟 Legacy DB backed up before migration');
+	} catch (e) {
+		console.warn('⚠️ Failed to backup legacy DB before migration:', e);
 	}
 }
 
@@ -66,22 +175,35 @@ export async function initDB(): Promise<void> {
 	console.log('🗄️ Initializing database...');
 
 	try {
-		// Initialize SQL.js with local wasm file
-		console.log('📦 Loading SQL.js WASM...');
-		SQL = await initSqlJs({
-			locateFile: (file: string) => `${base}/${file}`
-		});
-		console.log('✅ SQL.js loaded');
+		// Initialize SQLite WASM
+		console.log('📦 Loading SQLite WASM...');
+		sqlite3 = await sqlite3InitModule();
+		console.log('✅ SQLite WASM loaded');
 
-		// Try to load existing database
-		const existingData = loadDatabase();
-		if (existingData) {
-			db = new SQL.Database(existingData);
-			console.log('📂 Loaded existing database');
-		} else {
-			db = new SQL.Database();
-			console.log('📂 Created new database');
-		}
+		// Try to load v2 DB first, then migrate from legacy DB if needed.
+			backupLegacyDbOnce();
+			const currentData = loadDatabase(DB_NAME);
+			const legacyData = loadDatabase(LEGACY_DB_NAME);
+			const legacyBackupData = loadDatabase(LEGACY_DB_BACKUP_NAME);
+			const candidates: Array<{ source: string; bytes: Uint8Array; taskCount: number }> = [];
+			if (currentData) candidates.push({ source: DB_NAME, bytes: currentData, taskCount: getTaskCountFromBytes(currentData) });
+			if (legacyData) candidates.push({ source: LEGACY_DB_NAME, bytes: legacyData, taskCount: getTaskCountFromBytes(legacyData) });
+			if (legacyBackupData) candidates.push({ source: LEGACY_DB_BACKUP_NAME, bytes: legacyBackupData, taskCount: getTaskCountFromBytes(legacyBackupData) });
+
+			candidates.sort((a, b) => b.taskCount - a.taskCount);
+			const bestCandidate = candidates[0];
+			const hasLegacyRaw = typeof window !== 'undefined' && !!localStorage.getItem(LEGACY_DB_NAME);
+			const hasCurrentRaw = typeof window !== 'undefined' && !!localStorage.getItem(DB_NAME);
+
+			if (bestCandidate) {
+				db = openDatabaseFromBytes(bestCandidate.bytes);
+				console.log(`📂 Loaded database from ${bestCandidate.source} (${bestCandidate.taskCount} tasks)`);
+			} else if (hasLegacyRaw || hasCurrentRaw) {
+				throw new Error('พบข้อมูลฐานข้อมูลเดิม แต่ไม่สามารถถอดข้อมูลได้');
+			} else {
+				db = openDatabaseFromBytes();
+				console.log('📂 Created new database');
+			}
 
 		// Create tables
 		createTables();
@@ -89,7 +211,7 @@ export async function initDB(): Promise<void> {
 		// Run migrations for existing databases
 		runMigrations();
 		
-		// Save initial state
+		// Save initial state to v2 key (keeps legacy key untouched).
 		saveDatabase();
 		
 		console.log('✅ Database initialized');
@@ -98,8 +220,8 @@ export async function initDB(): Promise<void> {
 		// Try to recover by clearing and starting fresh
 		try {
 			localStorage.removeItem(DB_NAME);
-			if (SQL) {
-				db = new SQL.Database();
+			if (sqlite3) {
+				db = openDatabaseFromBytes();
 				createTables();
 				saveDatabase();
 				console.log('⚠️ Recovered with fresh database');
@@ -124,13 +246,12 @@ function ensureUpdatedAtColumn(): boolean {
 	if (hasUpdatedAtColumn !== null) return hasUpdatedAtColumn;
 	
 	try {
-		const result = db.exec("PRAGMA table_info(tasks)");
-		const columns = result[0]?.values || [];
-		hasUpdatedAtColumn = columns.some((col: any[]) => col[1] === 'updated_at');
+		const columns = db.selectObjects('PRAGMA table_info(tasks)');
+		hasUpdatedAtColumn = columns.some((col: Record<string, any>) => col.name === 'updated_at');
 		
 		if (!hasUpdatedAtColumn) {
 			console.log('🔄 Adding updated_at column...');
-			db.run(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+			runSql(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 			hasUpdatedAtColumn = true;
 			console.log('✅ Added updated_at column');
 			return true;
@@ -139,7 +260,7 @@ function ensureUpdatedAtColumn(): boolean {
 	} catch (e) {
 		// If PRAGMA fails, assume column doesn't exist and try to add it
 		try {
-			db.run(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+			runSql(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 			hasUpdatedAtColumn = true;
 			console.log('✅ Added updated_at column (fallback)');
 			return true;
@@ -165,7 +286,7 @@ export function cleanupDB() {
 			saveDatabase();
 			db.close();
 			db = null;
-			SQL = null;
+			sqlite3 = null;
 			console.log('🧹 Database cleaned up');
 		} catch (e) {
 			console.warn('Cleanup error:', e);
@@ -182,7 +303,7 @@ function createTables() {
 	if (!db) throw new Error('DB not initialized');
 
 	// Create projects table
-	db.run(`
+	runSql(`
 		CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -191,7 +312,7 @@ function createTables() {
 	`);
 
 	// Create assignees table
-	db.run(`
+	runSql(`
 		CREATE TABLE IF NOT EXISTS assignees (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -201,7 +322,7 @@ function createTables() {
 	`);
 
 	// Create tasks table
-	db.run(`
+	runSql(`
 		CREATE TABLE IF NOT EXISTS tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			title TEXT NOT NULL,
@@ -222,28 +343,28 @@ function createTables() {
 	
 	// Try to add project column if table already exists without it
 	try {
-		db.run(`ALTER TABLE tasks ADD COLUMN project TEXT DEFAULT ''`);
+		runSql(`ALTER TABLE tasks ADD COLUMN project TEXT DEFAULT ''`);
 	} catch (e) {
 		// Column already exists
 	}
 	
 	// Try to add sprint_id column
 	try {
-		db.run(`ALTER TABLE tasks ADD COLUMN sprint_id INTEGER DEFAULT NULL`);
+		runSql(`ALTER TABLE tasks ADD COLUMN sprint_id INTEGER DEFAULT NULL`);
 	} catch (e) {
 		// Column already exists
 	}
 	
 	// Try to add is_archived column
 	try {
-		db.run(`ALTER TABLE tasks ADD COLUMN is_archived INTEGER DEFAULT 0`);
+		runSql(`ALTER TABLE tasks ADD COLUMN is_archived INTEGER DEFAULT 0`);
 	} catch (e) {
 		// Column already exists
 	}
 	
 	// Try to add updated_at column
 	try {
-		db.run(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+		runSql(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 	} catch (e) {
 		// Column already exists
 	}
@@ -254,7 +375,16 @@ export async function closeDB(): Promise<void> {
 		saveDatabase();
 		db.close();
 		db = null;
+		sqlite3 = null;
 	}
+}
+
+export function cleanupLegacyDatabaseStorage(): void {
+	if (typeof window === 'undefined') return;
+	localStorage.removeItem(LEGACY_DB_NAME);
+	localStorage.removeItem(LEGACY_DB_BACKUP_NAME);
+	localStorage.removeItem(MIGRATION_FLAG);
+	console.log('🧹 Legacy DB storage cleaned');
 }
 
 // Helper function to exec query and get results
@@ -262,15 +392,15 @@ function execQuery(sql: string, params?: any[]): { columns: string[], values: an
 	if (!db) throw new Error('DB not initialized');
 	
 	const stmt = db.prepare(sql);
-	if (params) {
+	if (params && params.length > 0) {
 		stmt.bind(params);
 	}
 	
 	const results: any[] = [];
 	while (stmt.step()) {
-		results.push(stmt.getAsObject());
+		results.push(stmt.get({}));
 	}
-	stmt.free();
+	stmt.finalize();
 	
 	// Convert to columns/values format similar to db.exec
 	if (results.length === 0) {
@@ -278,7 +408,12 @@ function execQuery(sql: string, params?: any[]): { columns: string[], values: an
 	}
 	
 	const columns = Object.keys(results[0]);
-	const values = results.map(row => columns.map(col => (row as any)[col]));
+	const values = results.map(row =>
+		columns.map(col => {
+			const val = (row as any)[col];
+			return typeof val === 'bigint' ? Number(val) : val;
+		})
+	);
 	
 	return { columns, values };
 }
@@ -288,7 +423,7 @@ function execQuery(sql: string, params?: any[]): { columns: string[], values: an
 export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<number> {
 	if (!db) throw new Error('DB not initialized');
 	
-	db.run(
+	runSql(
 		`INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
@@ -308,8 +443,7 @@ export async function addTask(task: Omit<Task, 'id' | 'created_at'>): Promise<nu
 	saveDatabase();
 	
 	// Get the last inserted id
-	const result = db.exec('SELECT last_insert_rowid() as id');
-	const id = result[0]?.values[0][0] as number;
+	const id = Number(db.selectValue('SELECT last_insert_rowid() as id')) || 0;
 	
 	// Sync to CRDT
 	if (id) {
@@ -393,7 +527,7 @@ export async function updateTask(id: number, updates: Partial<Task>): Promise<vo
 	console.log('🔍 updateTask SQL:', { sets, valuesCount: values.length, sql: `UPDATE tasks SET ${sets.join(', ')} WHERE id = ?` });
 	
 	try {
-		db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
+		runSql(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
 		saveDatabase();
 		console.log('✅ updateTask completed:', { id });
 		
@@ -415,7 +549,7 @@ export async function updateTask(id: number, updates: Partial<Task>): Promise<vo
 			hasUpdatedAtColumn = false;
 			const setsWithoutUpdatedAt = sets.filter(s => !s.includes('updated_at'));
 			if (setsWithoutUpdatedAt.length > 0) {
-				db.run(`UPDATE tasks SET ${setsWithoutUpdatedAt.join(', ')} WHERE id = ?`, 
+				runSql(`UPDATE tasks SET ${setsWithoutUpdatedAt.join(', ')} WHERE id = ?`, 
 					values.filter((_, i) => !sets[i]?.includes('updated_at')));
 				saveDatabase();
 				console.log('✅ updateTask completed (without updated_at):', { id });
@@ -429,7 +563,7 @@ export async function updateTask(id: number, updates: Partial<Task>): Promise<vo
 export async function deleteTask(id: number): Promise<void> {
 	if (!db) throw new Error('DB not initialized');
 	
-	db.run('DELETE FROM tasks WHERE id = ?', [id]);
+	runSql('DELETE FROM tasks WHERE id = ?', [id]);
 	saveDatabase();
 	
 	// Sync to CRDT (soft delete)
@@ -659,7 +793,7 @@ export async function getProjectStats(): Promise<{ id: number; taskCount: number
 export async function addProject(project: Omit<Project, 'id' | 'created_at'>): Promise<void> {
 	if (!db) throw new Error('DB not initialized');
 	
-	db.run('INSERT INTO projects (name) VALUES (?)', [project.name]);
+	runSql('INSERT INTO projects (name) VALUES (?)', [project.name]);
 	
 	saveDatabase();
 }
@@ -674,10 +808,10 @@ export async function updateProject(id: number, updates: Partial<Project>): Prom
 	
 	if (updates.name !== undefined) {
 		// Update project name
-		db.run('UPDATE projects SET name = ? WHERE id = ?', [updates.name, id]);
+		runSql('UPDATE projects SET name = ? WHERE id = ?', [updates.name, id]);
 		
 		// Update all tasks with old project name
-		db.run('UPDATE tasks SET project = ? WHERE project = ?', [updates.name, oldName]);
+		runSql('UPDATE tasks SET project = ? WHERE project = ?', [updates.name, oldName]);
 	}
 	
 	saveDatabase();
@@ -693,10 +827,10 @@ export async function deleteProject(id: number): Promise<void> {
 	const projectName = project.values[0][0];
 	
 	// Set project to empty for all tasks using this project
-	db.run('UPDATE tasks SET project = "" WHERE project = ?', [projectName]);
+	runSql('UPDATE tasks SET project = "" WHERE project = ?', [projectName]);
 	
 	// Delete the project
-	db.run('DELETE FROM projects WHERE id = ?', [id]);
+	runSql('DELETE FROM projects WHERE id = ?', [id]);
 	
 	saveDatabase();
 }
@@ -707,7 +841,7 @@ export async function archiveTasksBySprint(sprintId: number): Promise<number> {
 	if (!db) throw new Error('DB not initialized');
 	
 	// Archive all done tasks in the sprint (keep original status, just mark as archived)
-	db.run(`
+	runSql(`
 		UPDATE tasks 
 		SET is_archived = 1
 		WHERE sprint_id = ? AND status = 'done' AND is_archived = 0
@@ -809,7 +943,7 @@ export async function getAssigneeStats(): Promise<{ id: number; taskCount: numbe
 export async function addAssignee(assignee: Omit<Assignee, 'id' | 'created_at'>): Promise<void> {
 	if (!db) throw new Error('DB not initialized');
 	
-	db.run('INSERT INTO assignees (name, color) VALUES (?, ?)', [
+	runSql('INSERT INTO assignees (name, color) VALUES (?, ?)', [
 		assignee.name,
 		assignee.color || '#6366F1'
 	]);
@@ -836,7 +970,7 @@ export async function updateAssignee(id: number, updates: Partial<Assignee>): Pr
 	
 	values.push(id);
 	
-	db.run(`UPDATE assignees SET ${sets.join(', ')} WHERE id = ?`, values);
+	runSql(`UPDATE assignees SET ${sets.join(', ')} WHERE id = ?`, values);
 	saveDatabase();
 }
 
@@ -844,10 +978,10 @@ export async function deleteAssignee(id: number): Promise<void> {
 	if (!db) throw new Error('DB not initialized');
 	
 	// Set assignee_id to NULL for all tasks assigned to this assignee
-	db.run('UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?', [id]);
+	runSql('UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?', [id]);
 	
 	// Delete the assignee
-	db.run('DELETE FROM assignees WHERE id = ?', [id]);
+	runSql('DELETE FROM assignees WHERE id = ?', [id]);
 	
 	saveDatabase();
 }
@@ -903,12 +1037,12 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 	
 	// Start transaction
 	try {
-		db.run('BEGIN TRANSACTION');
+		runSql('BEGIN TRANSACTION');
 		
 		// Clear existing tasks if requested (for sync)
 		if (options.clearExisting !== false) {
 			console.log('🗑️ Clearing existing tasks...');
-			db.run('DELETE FROM tasks');
+			runSql('DELETE FROM tasks');
 		}
 		
 		let imported = 0;
@@ -931,7 +1065,7 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 			try {
 				// Use REPLACE INTO to handle duplicate IDs
 				if (row.id) {
-					db.run(`
+					runSql(`
 						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -949,7 +1083,7 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
-					db.run(`
+					runSql(`
 						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -972,7 +1106,7 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 			}
 		}
 		
-		db.run('COMMIT');
+		runSql('COMMIT');
 		console.log(`✅ Imported ${imported} tasks (${errors} errors)`);
 		
 		saveDatabase();
@@ -980,7 +1114,7 @@ export async function importFromCSV(csvContent: string, options: { clearExisting
 	} catch (e) {
 		console.error('❌ Import failed, rolling back:', e);
 		try {
-			db.run('ROLLBACK');
+			runSql('ROLLBACK');
 		} catch (rollbackErr) {
 			console.error('Rollback failed:', rollbackErr);
 		}
@@ -1050,7 +1184,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 	let updated = 0;
 	let unchanged = 0;
 	
-	db.run('BEGIN TRANSACTION');
+	runSql('BEGIN TRANSACTION');
 	
 	try {
 		for (let i = 1; i < lines.length; i++) {
@@ -1069,7 +1203,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 			if (!existing) {
 				// New task - insert
 				try {
-					db.run(`
+					runSql(`
 						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -1106,7 +1240,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 				if (isDifferent && serverDate >= localDate) {
 					// Server version is newer or same age but different - update
 					try {
-						db.run(`
+						runSql(`
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
@@ -1139,7 +1273,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 			}
 		}
 		
-		db.run('COMMIT');
+		runSql('COMMIT');
 		saveDatabase();
 		
 		console.log(`✅ Merge complete: ${added} added, ${updated} updated, ${unchanged} unchanged`);
@@ -1147,7 +1281,7 @@ export async function mergeTasksFromCSV(csvContent: string): Promise<{ added: nu
 		
 		return { added, updated, unchanged };
 	} catch (e) {
-		db.run('ROLLBACK');
+		runSql('ROLLBACK');
 		throw e;
 	}
 }
@@ -1291,45 +1425,46 @@ export async function exportAllData(): Promise<string> {
 
 export async function exportSQLiteBinary(): Promise<Uint8Array> {
 	if (!db) throw new Error('DB not initialized');
-	return db.export();
+	return sqlite3.capi.sqlite3_js_db_export(db);
 }
 
 export async function exportFilteredSQLiteBinary(taskIds: number[]): Promise<Uint8Array> {
-	if (!db) throw new Error('DB not initialized');
+	if (!db || !sqlite3) throw new Error('DB not initialized');
+	const sourceBytes = sqlite3.capi.sqlite3_js_db_export(db);
 	if (taskIds.length === 0) {
-		const tempDb = new SQL.Database(db.export());
+		const tempDb = openDatabaseFromBytes(sourceBytes);
 		try {
-			tempDb.run('DELETE FROM tasks');
-			tempDb.run('DELETE FROM projects');
-			tempDb.run('DELETE FROM assignees');
-			return tempDb.export();
+			runSql('DELETE FROM tasks', undefined, tempDb);
+			runSql('DELETE FROM projects', undefined, tempDb);
+			runSql('DELETE FROM assignees', undefined, tempDb);
+			return sqlite3.capi.sqlite3_js_db_export(tempDb);
 		} finally {
 			tempDb.close();
 		}
 	}
 
-	const tempDb = new SQL.Database(db.export());
+	const tempDb = openDatabaseFromBytes(sourceBytes);
 	try {
 		const placeholders = taskIds.map(() => '?').join(',');
-		tempDb.run(`DELETE FROM tasks WHERE id NOT IN (${placeholders})`, taskIds);
+		runSql(`DELETE FROM tasks WHERE id NOT IN (${placeholders})`, taskIds, tempDb);
 
-		tempDb.run(`
+		runSql(`
 			DELETE FROM assignees
 			WHERE id NOT IN (
 				SELECT DISTINCT assignee_id FROM tasks WHERE assignee_id IS NOT NULL
 			)
-		`);
+		`, undefined, tempDb);
 
-		tempDb.run(`
+		runSql(`
 			DELETE FROM projects
 			WHERE name NOT IN (
 				SELECT DISTINCT project
 				FROM tasks
 				WHERE project IS NOT NULL AND project != ''
 			)
-		`);
+		`, undefined, tempDb);
 
-		return tempDb.export();
+		return sqlite3.capi.sqlite3_js_db_export(tempDb);
 	} finally {
 		tempDb.close();
 	}
@@ -1424,7 +1559,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 	}
 	
 	// Start transaction
-	db.run('BEGIN TRANSACTION');
+	runSql('BEGIN TRANSACTION');
 	
 	try {
 		let tasksImported = 0;
@@ -1433,9 +1568,9 @@ export async function importAllData(csvContent: string, options: { clearExisting
 		
 		// Clear existing data if requested
 		if (options.clearExisting !== false) {
-			db.run('DELETE FROM tasks');
-			db.run('DELETE FROM projects');
-			db.run('DELETE FROM assignees');
+			runSql('DELETE FROM tasks');
+			runSql('DELETE FROM projects');
+			runSql('DELETE FROM assignees');
 			// Clear sprints from localStorage
 			if (typeof window !== 'undefined') {
 				localStorage.removeItem('sprints-data-v1');
@@ -1491,7 +1626,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 		for (const row of projectRows) {
 			try {
 				if (row.id) {
-					db.run(`
+					runSql(`
 						REPLACE INTO projects (id, name, created_at)
 						VALUES (?, ?, ?)
 					`, [
@@ -1500,7 +1635,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
-					db.run(`
+					runSql(`
 						INSERT INTO projects (name, created_at)
 						VALUES (?, ?)
 					`, [
@@ -1518,7 +1653,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 		for (const row of assigneeRows) {
 			try {
 				if (row.id) {
-					db.run(`
+					runSql(`
 						REPLACE INTO assignees (id, name, color, created_at)
 						VALUES (?, ?, ?, ?)
 					`, [
@@ -1528,7 +1663,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						row.created_at || new Date().toISOString()
 					]);
 				} else {
-					db.run(`
+					runSql(`
 						INSERT INTO assignees (name, color, created_at)
 						VALUES (?, ?, ?)
 					`, [
@@ -1565,7 +1700,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 						assigneeId = existingId;
 					} else {
 						// Create new assignee
-						db.run(`
+						runSql(`
 							INSERT INTO assignees (name, color, created_at)
 							VALUES (?, ?, ?)
 						`, [
@@ -1573,13 +1708,15 @@ export async function importAllData(csvContent: string, options: { clearExisting
 							'#6366F1',
 							new Date().toISOString()
 						]);
-						// Get the new assignee id
-						const newAssigneeResult = execQuery('SELECT last_insert_rowid() as id');
-						assigneeId = newAssigneeResult.values[0][0];
-						assigneeNameToId.set(row.assignee_name.trim(), assigneeId);
-						assigneesImported++;
+							// Get the new assignee id
+							const newAssigneeResult = execQuery('SELECT last_insert_rowid() as id');
+							assigneeId = Number(newAssigneeResult.values[0][0]) || null;
+							if (assigneeId !== null) {
+								assigneeNameToId.set(row.assignee_name.trim(), assigneeId);
+							}
+							assigneesImported++;
+						}
 					}
-				}
 				
 				// Check if we should use existing ID or create new one
 				const rowId = row.id ? parseInt(row.id) : null;
@@ -1591,7 +1728,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 				
 				if (shouldUseExistingId) {
 					// Use REPLACE for sync with existing IDs
-					db.run(`
+					runSql(`
 						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -1610,7 +1747,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 					]);
 				} else {
 					// Always INSERT as new task (ignore ID from file)
-					db.run(`
+					runSql(`
 						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -1632,7 +1769,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 			}
 		}
 		
-		db.run('COMMIT');
+		runSql('COMMIT');
 		saveDatabase();
 		
 		console.log(`✅ Import complete: ${tasksImported} tasks, ${projectsImported} projects, ${assigneesImported} assignees, ${sprintRows.length} sprints`);
@@ -1641,7 +1778,7 @@ export async function importAllData(csvContent: string, options: { clearExisting
 	} catch (e) {
 		console.error('❌ Import failed, rolling back:', e);
 		try {
-			db.run('ROLLBACK');
+			runSql('ROLLBACK');
 		} catch (rollbackErr) {
 			console.error('Rollback failed:', rollbackErr);
 		}
@@ -1755,7 +1892,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 		existingTasks.set(obj.id, obj);
 	}
 	
-	db.run('BEGIN TRANSACTION');
+	runSql('BEGIN TRANSACTION');
 	
 	try {
 		let tasksAdded = 0, tasksUpdated = 0, tasksUnchanged = 0;
@@ -1769,7 +1906,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 			
 			if (!existing) {
 				try {
-					db.run(`
+					runSql(`
 						INSERT INTO projects (name, created_at)
 						VALUES (?, ?)
 					`, [row.name || '', row.created_at || new Date().toISOString()]);
@@ -1779,7 +1916,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 				}
 			} else if (existing.name !== row.name) {
 				try {
-					db.run(`
+					runSql(`
 						UPDATE projects SET name = ?, created_at = ? WHERE id = ?
 					`, [row.name || '', row.created_at || existing.created_at, serverId]);
 					projectsUpdated++;
@@ -1803,7 +1940,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 			
 			if (!existing) {
 				try {
-					db.run(`
+					runSql(`
 						INSERT INTO assignees (name, color, created_at)
 						VALUES (?, ?, ?)
 					`, [row.name || '', row.color || '#6366F1', row.created_at || new Date().toISOString()]);
@@ -1817,7 +1954,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 				}
 			} else if (existing.name !== row.name || existing.color !== row.color) {
 				try {
-					db.run(`
+					runSql(`
 						UPDATE assignees SET name = ?, color = ?, created_at = ? WHERE id = ?
 					`, [
 						row.name || '',
@@ -1907,7 +2044,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 				}
 				// Create new assignee
 				try {
-					db.run(`
+					runSql(`
 						INSERT INTO assignees (name, color, created_at)
 						VALUES (?, ?, ?)
 					`, [name, '#6366F1', new Date().toISOString()]);
@@ -1931,7 +2068,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 			
 			if (!existing) {
 				try {
-					db.run(`
+					runSql(`
 						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`, [
@@ -1963,7 +2100,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 				
 				if (isDifferent && serverDate >= localDate) {
 					try {
-						db.run(`
+						runSql(`
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
@@ -1994,7 +2131,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 			if (serverId) existingTasks.delete(serverId);
 		}
 		
-		db.run('COMMIT');
+		runSql('COMMIT');
 		saveDatabase();
 		
 		console.log(`✅ Merge complete:`);
@@ -2010,7 +2147,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 			sprints: { added: sprintsAdded, updated: sprintsUpdated }
 		};
 	} catch (e) {
-		db.run('ROLLBACK');
+		runSql('ROLLBACK');
 		throw e;
 	}
 }

@@ -14,6 +14,8 @@ export const compressionStats = writable({
 	ratio: 0
 });
 
+const warnedLegacyKeys = new Set<string>();
+
 // Simple LZ-string compression (pure JS, no WASM)
 // Based on LZ-string library - minimal implementation
 export const LZString = {
@@ -97,7 +99,10 @@ export function getItem(key: string): string | null {
 	
 	// Legacy: check if compressed with old WASM format
 	if (isCompressed(data)) {
-		console.warn('Legacy WASM compressed data detected, cannot decompress');
+		if (!warnedLegacyKeys.has(key)) {
+			warnedLegacyKeys.add(key);
+			console.warn(`Legacy WASM compressed data detected for key "${key}", cannot decompress`);
+		}
 		return data; // Return as-is, will be overwritten on next save
 	}
 	
