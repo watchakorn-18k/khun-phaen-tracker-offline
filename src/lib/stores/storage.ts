@@ -220,11 +220,6 @@ export function clear(): void {
 
 // Migrate existing data to compressed format
 export async function migrateToCompressed(): Promise<void> {
-	if (!compressFn) {
-		console.warn('Compression not available, skipping migration');
-		return;
-	}
-	
 	console.log('🔄 Migrating storage to compressed format...');
 	
 	const keys: string[] = [];
@@ -240,11 +235,11 @@ export async function migrateToCompressed(): Promise<void> {
 		const value = localStorage.getItem(key);
 		if (!value) continue;
 		
-		// Skip if already compressed
-		if (isCompressed(value)) continue;
+		// Skip if already compressed (starts with LZ:)
+		if (value.startsWith('LZ:')) continue;
 		
 		try {
-			const compressed = compressFn(value);
+			const compressed = LZString.compress(value);
 			
 			// Only migrate if it saves space
 			if (compressed.length < value.length) {

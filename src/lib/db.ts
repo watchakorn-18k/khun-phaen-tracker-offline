@@ -118,26 +118,28 @@ function runMigrations() {
 	
 	console.log('🔄 Running migrations...');
 	
-	// Check if updated_at column exists
+	// Check if updated_at column exists using PRAGMA
 	try {
 		const result = db.exec("PRAGMA table_info(tasks)");
-		const columns = result[0]?.values.map((row: any) => row[1]) || [];
+		const columns = result[0]?.values || [];
+		const hasUpdatedAt = columns.some((col: any[]) => col[1] === 'updated_at');
 		
-		if (!columns.includes('updated_at')) {
+		if (hasUpdatedAt) {
+			console.log('✅ updated_at column already exists');
+		} else {
+			// Column doesn't exist, add it
 			console.log('🔄 Adding updated_at column...');
 			db.run(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 			console.log('✅ Added updated_at column');
-		} else {
-			console.log('✅ updated_at column already exists');
 		}
 	} catch (e: any) {
 		console.warn('⚠️ Migration check failed:', e?.message || e);
-		// Try to add column anyway
+		// Fallback: try to add column anyway (will fail silently if exists)
 		try {
 			db.run(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 			console.log('✅ Added updated_at column (fallback)');
 		} catch (e2) {
-			// Column might already exist
+			// Column probably already exists
 		}
 	}
 }
