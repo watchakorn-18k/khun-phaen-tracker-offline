@@ -12,7 +12,6 @@
 	let currentMonth = new Date().getMonth();
 	let currentYear = new Date().getFullYear();
 	let viewMode: 'days' | 'months' | 'years' = 'days';
-	const instanceId = Math.random().toString(36).slice(2);
 
 	const monthNames = [
 		'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -166,21 +165,11 @@
 
 	function toggleDropdown() {
 		isOpen = !isOpen;
-		if (isOpen) {
-			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
-			if (selectedDate) {
-				currentMonth = selectedDate.getMonth();
-				currentYear = selectedDate.getFullYear();
-			}
+		if (isOpen && selectedDate) {
+			currentMonth = selectedDate.getMonth();
+			currentYear = selectedDate.getFullYear();
 		}
 		viewMode = 'days';
-	}
-
-	function handleOtherDropdownOpen(event: Event) {
-		const e = event as CustomEvent<string>;
-		if (e.detail !== instanceId) {
-			isOpen = false;
-		}
 	}
 
 	function handleClickOutside(event: MouseEvent) {
@@ -197,7 +186,7 @@
 	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
 
 <div class="date-picker-container relative">
 	<!-- Trigger Button -->

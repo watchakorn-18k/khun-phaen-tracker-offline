@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import type { Task, Project, Assignee, ViewMode, FilterOptions } from '$lib/types';
 	import { getTasks, getTasksBySprint, addTask, updateTask, deleteTask, getStats, exportToCSV, importFromCSV, exportAllData, importAllData, mergeAllData, getCategories, getAssignees, getProjects, getProjectsList, addProject, updateProject, deleteProject, getProjectStats, addAssignee as addAssigneeDB, getAssigneeStats, updateAssignee, deleteAssignee, archiveTasksBySprint } from '$lib/db';
 	import TaskForm from '$lib/components/TaskForm.svelte';
@@ -24,7 +24,7 @@
 	import SearchableSprintSelect from '$lib/components/SearchableSprintSelect.svelte';
 	import SearchableSelect from '$lib/components/SearchableSelect.svelte';
 	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
-	
+
 	const FILTER_STORAGE_KEY = 'task-filters';
 	const DEFAULT_FILTERS: FilterOptions = {
 		startDate: '',
@@ -36,7 +36,7 @@
 		sprint_id: 'all',
 		search: ''
 	};
-	
+
 	let tasks: Task[] = [];
 	let sprintManagerTasks: Task[] = [];
 	let filteredTasks: Task[] = [];
@@ -48,7 +48,7 @@
 	let workerStats: { id: number; taskCount: number }[] = [];
 	let stats = { total: 0, todo: 0, in_progress: 0, done: 0, total_minutes: 0 };
 	const VIEW_MODE_STORAGE_KEY = 'khunphaen-view-mode';
-	
+
 	function loadSavedViewMode(): ViewMode {
 		if (typeof localStorage === 'undefined') return 'list';
 		const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
@@ -57,12 +57,12 @@
 		}
 		return 'list';
 	}
-	
+
 	function saveViewMode(view: ViewMode) {
 		if (typeof localStorage === 'undefined') return;
 		localStorage.setItem(VIEW_MODE_STORAGE_KEY, view);
 	}
-	
+
 	let currentView: ViewMode = loadSavedViewMode();
 	let editingTask: Task | null = null;
 	let showForm = false;
@@ -71,23 +71,19 @@
 	let showProjectManager = false;
 	let searchInput = '';
 	let showTabSettings = false;
-	let tabSettingsRef: HTMLDivElement;
-	const tabSettingsId = Math.random().toString(36).slice(2);
 	let showSprintManager = false;
 	let showChangeSprintModal = false;
 	let selectedTaskIdsForSprintChange: number[] = [];
-	let showChangeStatusModal = false;
-	let selectedTaskIdsForStatusChange: number[] = [];
-	let showChangeProjectModal = false;
-	let selectedTaskIdsForProjectChange: number[] = [];
-	
+	let showKeyboardShortcuts = false;
+	let searchInputRef: HTMLInputElement;
+
 	let filters: FilterOptions = { ...DEFAULT_FILTERS };
 	let selectedSprint: Sprint | null = null;
 	// Show all sprints including completed ones in dropdown
-	
+
 	// Save view mode when it changes
 	$: saveViewMode(currentView);
-	
+
 	let message = '';
 	let messageType: 'success' | 'error' = 'success';
 
@@ -95,7 +91,78 @@
 		if (value === undefined || value === 'all' || value === null) return value ?? 'all';
 		return $sprints.some((sprint) => sprint.id === value) ? value : 'all';
 	}
-	
+
+	// Keyboard shortcuts handler
+	function handleKeydown(event: KeyboardEvent) {
+		// Ignore if user is typing in an input/textarea
+		const target = event.target as HTMLElement;
+		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+			// Allow Escape to close modals even when in input
+			if (event.key === 'Escape') {
+				if (showForm) {
+					showForm = false;
+					editingTask = null;
+					event.preventDefault();
+					return;
+				}
+				if (showFilters) {
+					showFilters = false;
+					event.preventDefault();
+					return;
+				}
+				if (showWorkerManager) {
+					showWorkerManager = false;
+					event.preventDefault();
+					return;
+				}
+				if (showProjectManager) {
+					showProjectManager = false;
+					event.preventDefault();
+					return;
+				}
+				if (showSprintManager) {
+					showSprintManager = false;
+					event.preventDefault();
+					return;
+				}
+			}
+			return;
+		}
+
+		switch (event.key) {
+			case '/':
+				event.preventDefault();
+				searchInputRef?.focus();
+				break;
+			case 'n':
+			case 'N':
+				event.preventDefault();
+				showForm = true;
+				editingTask = null;
+				break;
+			case 'Escape':
+				if (showForm) {
+					showForm = false;
+					editingTask = null;
+				} else if (showFilters) {
+					showFilters = false;
+				} else if (showWorkerManager) {
+					showWorkerManager = false;
+				} else if (showProjectManager) {
+					showProjectManager = false;
+				} else if (showSprintManager) {
+					showSprintManager = false;
+				} else if (showTabSettings) {
+					showTabSettings = false;
+				}
+				break;
+			case '?':
+				event.preventDefault();
+				showKeyboardShortcuts = true;
+				break;
+		}
+	}
+
 	onMount(() => {
 		// Enable auto-import for server sync (before any connection)
 		enableAutoImport();
@@ -124,6 +191,13 @@
 		loadData().then(() => {
 			initWasmSearch(); // JS search, no delay needed
 		});
+
+		// Add keyboard shortcuts listener
+		document.addEventListener('keydown', handleKeydown);
+	});
+
+	onDestroy(() => {
+		document.removeEventListener('keydown', handleKeydown);
 	});
 	
 	async function loadData() {
@@ -247,26 +321,6 @@
 		message = msg;
 		messageType = type;
 		setTimeout(() => message = '', 3000);
-	}
-
-	function toggleTabSettings() {
-		showTabSettings = !showTabSettings;
-		if (showTabSettings) {
-			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: tabSettingsId }));
-		}
-	}
-
-	function handleTabSettingsDropdownOpen(event: Event) {
-		const e = event as CustomEvent<string>;
-		if (e.detail !== tabSettingsId) {
-			showTabSettings = false;
-		}
-	}
-
-	function handleTabSettingsClickOutside(event: MouseEvent) {
-		if (tabSettingsRef && !tabSettingsRef.contains(event.target as Node)) {
-			showTabSettings = false;
-		}
 	}
 
 	function applySprintUpdateToLocalState(taskIds: number[], sprintId: number | null) {
@@ -422,87 +476,6 @@
 			showMessage('เกิดข้อผิดพลาดในการลบหลายรายการ', 'error');
 		}
 	}
-
-	function handleChangeSprintRequest(event: CustomEvent<number[]>) {
-		selectedTaskIdsForSprintChange = event.detail;
-		showChangeSprintModal = true;
-	}
-
-	async function handleConfirmChangeSprint(sprintId: number | null) {
-		if (selectedTaskIdsForSprintChange.length === 0) return;
-		
-		showChangeSprintModal = false;
-		
-		await handleMoveTasksToSprint(
-			new CustomEvent('moveTasksToSprint', {
-				detail: { sprintId: sprintId === null ? -1 : sprintId, taskIds: selectedTaskIdsForSprintChange }
-			})
-		);
-		
-		selectedTaskIdsForSprintChange = [];
-	}
-
-	function handleChangeStatusRequest(event: CustomEvent<number[]>) {
-		selectedTaskIdsForStatusChange = event.detail;
-		showChangeStatusModal = true;
-	}
-
-	async function handleConfirmChangeStatus(newStatus: Task['status']) {
-		if (selectedTaskIdsForStatusChange.length === 0) return;
-		
-		showChangeStatusModal = false;
-		
-		try {
-			const updateResults = await Promise.allSettled(
-				selectedTaskIdsForStatusChange.map(id => updateTask(id, { status: newStatus }))
-			);
-			const updatedCount = updateResults.filter(result => result.status === 'fulfilled').length;
-			const failedCount = selectedTaskIdsForStatusChange.length - updatedCount;
-
-			await loadData();
-
-			if (failedCount === 0) {
-				showMessage(`เปลี่ยนสถานะสำเร็จ ${updatedCount} รายการ`);
-			} else {
-				showMessage(`เปลี่ยนสถานะสำเร็จ ${updatedCount} รายการ, ล้มเหลว ${failedCount} รายการ`, 'error');
-			}
-		} catch (e) {
-			showMessage('เกิดข้อผิดพลาดในการเปลี่ยนสถานะ', 'error');
-		}
-		
-		selectedTaskIdsForStatusChange = [];
-	}
-
-	function handleChangeProjectRequest(event: CustomEvent<number[]>) {
-		selectedTaskIdsForProjectChange = event.detail;
-		showChangeProjectModal = true;
-	}
-
-	async function handleConfirmChangeProject(projectName: string | null) {
-		if (selectedTaskIdsForProjectChange.length === 0) return;
-		
-		showChangeProjectModal = false;
-		
-		try {
-			const updateResults = await Promise.allSettled(
-				selectedTaskIdsForProjectChange.map(id => updateTask(id, { project: projectName }))
-			);
-			const updatedCount = updateResults.filter(result => result.status === 'fulfilled').length;
-			const failedCount = selectedTaskIdsForProjectChange.length - updatedCount;
-
-			await loadData();
-
-			if (failedCount === 0) {
-				showMessage(`เปลี่ยน Project สำเร็จ ${updatedCount} รายการ`);
-			} else {
-				showMessage(`เปลี่ยน Project สำเร็จ ${updatedCount} รายการ, ล้มเหลว ${failedCount} รายการ`, 'error');
-			}
-		} catch (e) {
-			showMessage('เกิดข้อผิดพลาดในการเปลี่ยน Project', 'error');
-		}
-		
-		selectedTaskIdsForProjectChange = [];
-	}
 	
 	function handleEditTask(event: CustomEvent<Task>) {
 		editingTask = event.detail;
@@ -539,15 +512,15 @@
 			const url = URL.createObjectURL(blob);
 			link.setAttribute('href', url);
 			const now = new Date();
-		const year = now.getFullYear();
-		const month = String(now.getMonth() + 1).padStart(2, '0');
-		const day = String(now.getDate()).padStart(2, '0');
-		const hours = String(now.getHours()).padStart(2, '0');
-		const minutes = String(now.getMinutes()).padStart(2, '0');
-		const seconds = String(now.getSeconds()).padStart(2, '0');
-		const dateStr = `${year}-${month}-${day}`;
-		const timeStr = `${hours}-${minutes}-${seconds}`;
-		link.setAttribute('download', `tasks_${dateStr}_${timeStr}.csv`);
+			const year = now.getFullYear();
+			const month = String(now.getMonth() + 1).padStart(2, '0');
+			const day = String(now.getDate()).padStart(2, '0');
+			const hours = String(now.getHours()).padStart(2, '0');
+			const minutes = String(now.getMinutes()).padStart(2, '0');
+			const seconds = String(now.getSeconds()).padStart(2, '0');
+			const dateStr = `${year}-${month}-${day}`;
+			const timeStr = `${hours}-${minutes}-${seconds}`;
+			link.setAttribute('download', `tasks_${dateStr}_${timeStr}.csv`);
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -642,9 +615,9 @@
 						<tbody>
 							${tasks.map((task, i) => {
 								const statusClass = task.status === 'done' ? 'status-done' : 
-													task.status === 'in-progress' ? 'status-in-progress' : 'status-todo';
+														task.status === 'in-progress' ? 'status-in-progress' : 'status-todo';
 								const statusText = task.status === 'done' ? 'เสร็จแล้ว' : 
-													task.status === 'in-progress' ? 'กำลังทำ' : 'รอดำเนินการ';
+														task.status === 'in-progress' ? 'กำลังทำ' : 'รอดำเนินการ';
 								const hours = Math.floor(task.duration_minutes / 60);
 								const mins = task.duration_minutes % 60;
 								const timeStr = task.duration_minutes > 0 ? 
@@ -785,8 +758,6 @@
 	}
 </script>
 
-<svelte:window on:click={handleTabSettingsClickOutside} on:dropdown-open={handleTabSettingsDropdownOpen} />
-
 <!-- Message Toast -->
 {#if message}
 	<div class="fixed top-20 right-4 z-50 animate-fade-in">
@@ -810,10 +781,11 @@
 		<div class="flex-1 relative">
 			<Search size={18} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
 			<input
+				bind:this={searchInputRef}
 				type="text"
 				value={searchInput}
 				on:input={handleSearchInput}
-				placeholder="ค้นหางาน..."
+				placeholder="ค้นหางาน... (กด / เพื่อค้นหา)"
 				class="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white text-base"
 			/>
 			{#if searchInput}
@@ -932,9 +904,9 @@
 		</div>
 		
 		<!-- Tab Settings -->
-		<div class="relative" bind:this={tabSettingsRef}>
+		<div class="relative">
 			<button
-				on:click={toggleTabSettings}
+				on:click={() => showTabSettings = !showTabSettings}
 				class="flex items-center justify-center gap-2 px-4 py-2 h-10 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
 				title="ตั้งค่าแท็บ"
 			>
@@ -966,21 +938,19 @@
 
 				<div>
 					<label for="startDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date ตั้งแต่</label>
-					<input
+					<CustomDatePicker
 						id="startDate"
-						type="date"
 						bind:value={filters.startDate}
-						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+						placeholder="เลือกวันเริ่มต้น..."
 					/>
 				</div>
 
 				<div>
 					<label for="endDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date ถึง</label>
-					<input
+					<CustomDatePicker
 						id="endDate"
-						type="date"
 						bind:value={filters.endDate}
-						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+						placeholder="เลือกวันสิ้นสุด..."
 					/>
 				</div>
 
@@ -1115,9 +1085,6 @@
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:deleteSelected={handleDeleteSelectedTasks}
-				on:changeSprint={handleChangeSprintRequest}
-				on:changeStatus={handleChangeStatusRequest}
-				on:changeProject={handleChangeProjectRequest}
 				on:statusChange={handleStatusChange}
 			/>
 		{/if}
@@ -1146,189 +1113,6 @@
 		/>
 	{/if}
 	
-	<!-- Change Sprint Modal -->
-	{#if showChangeSprintModal}
-		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-						เปลี่ยน Sprint
-					</h3>
-					<button
-						on:click={() => { showChangeSprintModal = false; selectedTaskIdsForSprintChange = []; }}
-						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-					>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-					</button>
-				</div>
-				
-				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-					เลือก Sprint สำหรับ {selectedTaskIdsForSprintChange.length} งานที่เลือก
-				</p>
-				
-				<div class="space-y-2 max-h-80 overflow-y-auto">
-					<!-- No Sprint option -->
-					<button
-						on:click={() => handleConfirmChangeSprint(null)}
-						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-					>
-						<div class="flex items-center gap-2">
-							<span class="text-gray-500 dark:text-gray-400">ไม่มี Sprint</span>
-						</div>
-					</button>
-					
-					{#each $sprints.filter(s => s.status !== 'completed').sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()) as sprint}
-						<button
-							on:click={() => handleConfirmChangeSprint(sprint.id)}
-							class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-						>
-							<div class="flex items-center justify-between">
-								<span class="font-medium text-gray-900 dark:text-white">{sprint.name}</span>
-								{#if sprint.status === 'active'}
-									<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full">กำลังทำ</span>
-								{:else}
-									<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">วางแผน</span>
-								{/if}
-							</div>
-							{#if sprint.goal}
-								<p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">{sprint.goal}</p>
-							{/if}
-						</button>
-					{/each}
-				</div>
-				
-				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-					<button
-						on:click={() => { showChangeSprintModal = false; selectedTaskIdsForSprintChange = []; }}
-						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-					>
-						ยกเลิก
-					</button>
-				</div>
-			</div>
-		</div>
-	{/if}
-	
-	<!-- Change Status Modal -->
-	{#if showChangeStatusModal}
-		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-						เปลี่ยนสถานะ
-					</h3>
-					<button
-						on:click={() => { showChangeStatusModal = false; selectedTaskIdsForStatusChange = []; }}
-						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-					>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-					</button>
-				</div>
-				
-				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-					เลือกสถานะสำหรับ {selectedTaskIdsForStatusChange.length} งานที่เลือก
-				</p>
-				
-				<div class="space-y-2">
-					<button
-						on:click={() => handleConfirmChangeStatus('todo')}
-						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-					>
-						<span class="w-3 h-3 rounded-full bg-gray-400"></span>
-						<div>
-							<span class="font-medium text-gray-900 dark:text-white">รอดำเนินการ</span>
-							<p class="text-xs text-gray-500">งานที่ยังไม่เริ่มทำ</p>
-						</div>
-					</button>
-					
-					<button
-						on:click={() => handleConfirmChangeStatus('in-progress')}
-						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-					>
-						<span class="w-3 h-3 rounded-full bg-blue-500"></span>
-						<div>
-							<span class="font-medium text-gray-900 dark:text-white">กำลังทำ</span>
-							<p class="text-xs text-gray-500">งานที่กำลังดำเนินการอยู่</p>
-						</div>
-					</button>
-					
-					<button
-						on:click={() => handleConfirmChangeStatus('done')}
-						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
-					>
-						<span class="w-3 h-3 rounded-full bg-green-500"></span>
-						<div>
-							<span class="font-medium text-gray-900 dark:text-white">เสร็จแล้ว</span>
-							<p class="text-xs text-gray-500">งานที่เสร็จสิ้นแล้ว</p>
-						</div>
-					</button>
-				</div>
-				
-				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-					<button
-						on:click={() => { showChangeStatusModal = false; selectedTaskIdsForStatusChange = []; }}
-						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-					>
-						ยกเลิก
-					</button>
-				</div>
-			</div>
-		</div>
-	{/if}
-	
-	<!-- Change Project Modal -->
-	{#if showChangeProjectModal}
-		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-						เปลี่ยน Project
-					</h3>
-					<button
-						on:click={() => { showChangeProjectModal = false; selectedTaskIdsForProjectChange = []; }}
-						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-					>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-					</button>
-				</div>
-				
-				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-					เลือก Project สำหรับ {selectedTaskIdsForProjectChange.length} งานที่เลือก
-				</p>
-				
-				<div class="space-y-2 max-h-80 overflow-y-auto">
-					<!-- No Project option -->
-					<button
-						on:click={() => handleConfirmChangeProject(null)}
-						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-					>
-						<div class="flex items-center gap-2">
-							<span class="text-gray-500 dark:text-gray-400">ไม่มี Project</span>
-						</div>
-					</button>
-					
-					{#each projects.sort() as project}
-						<button
-							on:click={() => handleConfirmChangeProject(project)}
-							class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-						>
-							<span class="font-medium text-gray-900 dark:text-white">{project}</span>
-						</button>
-					{/each}
-				</div>
-				
-				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-					<button
-						on:click={() => { showChangeProjectModal = false; selectedTaskIdsForProjectChange = []; }}
-						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-					>
-						ยกเลิก
-					</button>
-				</div>
-			</div>
-		</div>
-	{/if}
-	
 	<!-- Project Manager Modal -->
 	{#if showProjectManager}
 		<ProjectManager
@@ -1350,12 +1134,5 @@
 	
 	.animate-fade-in {
 		animation: fade-in 0.3s ease-out;
-	}
-	
-	.line-clamp-1 {
-		display: -webkit-box;
-		-webkit-line-clamp: 1;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
 	}
 </style>
