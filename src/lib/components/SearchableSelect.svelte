@@ -11,7 +11,7 @@
 	let searchQuery = '';
 	let dropdownRef: HTMLDivElement;
 	let searchInputRef: HTMLInputElement;
-	const instanceId = Math.random().toString(36).slice(2);
+
 
 	// Filter by search query
 	$: filteredOptions = searchQuery.trim()
@@ -38,16 +38,7 @@
 	function toggleDropdown() {
 		isOpen = !isOpen;
 		if (isOpen) {
-			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
 			setTimeout(() => searchInputRef?.focus(), 0);
-		}
-	}
-
-	function handleOtherDropdownOpen(event: Event) {
-		const e = event as CustomEvent<string>;
-		if (e.detail !== instanceId) {
-			isOpen = false;
-			searchQuery = '';
 		}
 	}
 
@@ -64,7 +55,7 @@
 	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
 
 <div class="relative" bind:this={dropdownRef}>
 	<!-- Trigger Button -->

@@ -14,7 +14,7 @@
 	let importError = '';
 	let showExportDropdown = false;
 	let dropdownRef: HTMLDivElement;
-	const instanceId = Math.random().toString(36).slice(2);
+
 	
 	function handleFileSelect(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -60,16 +60,6 @@
 
 	function toggleExportDropdown() {
 		showExportDropdown = !showExportDropdown;
-		if (showExportDropdown) {
-			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
-		}
-	}
-
-	function handleOtherDropdownOpen(event: Event) {
-		const e = event as CustomEvent<string>;
-		if (e.detail !== instanceId) {
-			showExportDropdown = false;
-		}
 	}
 
 	function handleClickOutside(event: MouseEvent) {
@@ -85,7 +75,7 @@
 	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
 
 <div class="flex flex-wrap gap-2">
 	<!-- Export Dropdown -->

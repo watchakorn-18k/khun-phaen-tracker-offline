@@ -21,7 +21,6 @@
     
     let showPanel = false;
     let panelRef: HTMLDivElement;
-    const instanceId = Math.random().toString(36).slice(2);
     let joinCode = '';
     let shareData = '';
     let copied = false;
@@ -87,16 +86,6 @@
 
     function togglePanel() {
         showPanel = !showPanel;
-        if (showPanel) {
-            window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
-        }
-    }
-
-    function handleOtherDropdownOpen(event: Event) {
-        const e = event as CustomEvent<string>;
-        if (e.detail !== instanceId) {
-            showPanel = false;
-        }
     }
 
     function handleClickOutside(event: MouseEvent) {
@@ -112,7 +101,7 @@
     }
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
 
 <div class="relative" bind:this={panelRef}>
     <!-- Sync Button -->

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { Play, Pause, RotateCcw, Timer } from 'lucide-svelte';
+	import { Play, Pause, RotateCcw, Timer, HelpCircle } from 'lucide-svelte';
+	import { showKeyboardShortcuts } from '$lib/stores/keyboardShortcuts';
 
 	let elapsed = 0;
 	let isRunning = false;
@@ -62,6 +63,10 @@
 		}, 200);
 	}
 
+	function openHelp() {
+		showKeyboardShortcuts.set(true);
+	}
+
 	onMount(() => {
 		window.addEventListener('beforeunload', handleBeforeUnload);
 	});
@@ -73,64 +78,76 @@
 	});
 </script>
 
-<!-- Dev Timer - Minimal Bottom Right -->
-<div
-	class="fixed bottom-4 right-4 z-50 flex items-center"
-	on:mouseenter={handleMouseEnter}
-	on:mouseleave={handleMouseLeave}
->
-	<!-- Expanded Controls -->
-	{#if isExpanded}
-		<div class="flex items-center gap-1 mr-2 animate-slide-in">
-			<!-- Reset Button -->
-			{#if elapsed > 0}
-				<button
-					on:click={stop}
-					class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-white/70 hover:text-white hover:bg-slate-700 transition-colors"
-					title="รีเซ็ต"
-				>
-					<RotateCcw size={14} />
-				</button>
-			{/if}
-
-			<!-- Play/Pause Button (Red) -->
-			{#if isRunning}
-				<button
-					on:click={pause}
-					class="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-colors"
-					title="หยุด"
-				>
-					<Pause size={18} fill="currentColor" />
-				</button>
-			{:else}
-				<button
-					on:click={start}
-					class="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-colors"
-					title={elapsed > 0 ? 'ต่อ' : 'เริ่ม'}
-				>
-					<Play size={18} fill="currentColor" />
-				</button>
-			{/if}
-		</div>
-	{/if}
-
-	<!-- Main Timer Button -->
+<!-- Dev Timer & Help Button Container -->
+<div class="fixed bottom-4 right-4 z-50 flex items-center gap-2">
+	<!-- Help Button -->
 	<button
-		class="flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-all duration-300 {isRunning ? 'bg-red-600' : 'bg-slate-800'}"
+		on:click={openHelp}
+		class="flex items-center justify-center w-10 h-10 rounded-full bg-slate-800 text-white/70 hover:text-white hover:bg-slate-700 shadow-lg transition-colors"
+		title="คีย์ลัด (?)"
 	>
-		{#if isRunning}
-			<span class="relative flex h-2 w-2">
-				<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-				<span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-			</span>
-		{:else}
-			<Timer size={16} class="text-white" />
-		{/if}
-		
-		<span class="font-mono text-sm font-semibold text-white tabular-nums tracking-wide">
-			{formatTime(elapsed)}
-		</span>
+		<HelpCircle size={18} />
 	</button>
+
+	<!-- Timer Container -->
+	<div
+		class="flex items-center"
+		on:mouseenter={handleMouseEnter}
+		on:mouseleave={handleMouseLeave}
+	>
+		<!-- Expanded Controls -->
+		{#if isExpanded}
+			<div class="flex items-center gap-1 mr-2 animate-slide-in">
+				<!-- Reset Button -->
+				{#if elapsed > 0}
+					<button
+						on:click={stop}
+						class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-white/70 hover:text-white hover:bg-slate-700 transition-colors"
+						title="รีเซ็ต"
+					>
+						<RotateCcw size={14} />
+					</button>
+				{/if}
+
+				<!-- Play/Pause Button (Red) -->
+				{#if isRunning}
+					<button
+						on:click={pause}
+						class="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-colors"
+						title="หยุด"
+					>
+						<Pause size={18} fill="currentColor" />
+					</button>
+				{:else}
+					<button
+						on:click={start}
+						class="flex items-center justify-center w-10 h-10 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-colors"
+						title={elapsed > 0 ? 'ต่อ' : 'เริ่ม'}
+					>
+						<Play size={18} fill="currentColor" />
+					</button>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Main Timer Button -->
+		<button
+			class="flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-all duration-300 {isRunning ? 'bg-red-600' : 'bg-slate-800'}"
+		>
+			{#if isRunning}
+				<span class="relative flex h-2 w-2">
+					<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+					<span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+				</span>
+			{:else}
+				<Timer size={16} class="text-white" />
+			{/if}
+			
+			<span class="font-mono text-sm font-semibold text-white tabular-nums tracking-wide">
+				{formatTime(elapsed)}
+			</span>
+		</button>
+	</div>
 </div>
 
 <style>

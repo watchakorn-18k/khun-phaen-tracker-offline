@@ -24,6 +24,7 @@
 	import SearchableSprintSelect from '$lib/components/SearchableSprintSelect.svelte';
 	import SearchableSelect from '$lib/components/SearchableSelect.svelte';
 	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
+	import { showKeyboardShortcuts } from '$lib/stores/keyboardShortcuts';
 
 	const FILTER_STORAGE_KEY = 'task-filters';
 	const DEFAULT_FILTERS: FilterOptions = {
@@ -74,7 +75,6 @@
 	let showSprintManager = false;
 	let showChangeSprintModal = false;
 	let selectedTaskIdsForSprintChange: number[] = [];
-	let showKeyboardShortcuts = false;
 	let searchInputRef: HTMLInputElement;
 
 	let filters: FilterOptions = { ...DEFAULT_FILTERS };
@@ -158,7 +158,7 @@
 				break;
 			case '?':
 				event.preventDefault();
-				showKeyboardShortcuts = true;
+				$showKeyboardShortcuts = true;
 				break;
 		}
 	}
@@ -846,7 +846,7 @@
 				<Flag size={16} />
 				<span class="hidden sm:inline">Sprint</span>
 			</button>
-			
+
 			<ExportImport
 				on:exportCSV={handleExportCSV}
 				on:exportPDF={handleExportPDF}
@@ -1124,6 +1124,79 @@
 			on:delete={handleDeleteProject}
 		/>
 	{/if}
+
+	<!-- Keyboard Shortcuts Modal -->
+	{#if $showKeyboardShortcuts}
+		<!-- svelte-ignore a11y-click-events-have-key-events -->
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<div
+			class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+			on:click|self={() => $showKeyboardShortcuts = false}
+		>
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-modal-in">
+				<div class="flex items-center justify-between mb-6">
+					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+						⌨️ คีย์ลัด (Keyboard Shortcuts)
+					</h3>
+					<button
+						on:click={() => $showKeyboardShortcuts = false}
+						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+					>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+					</button>
+				</div>
+
+				<div class="space-y-3">
+					<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+						<div class="flex items-center gap-3">
+							<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">/</kbd>
+							<span class="text-gray-700 dark:text-gray-300">โฟกัสช่องค้นหา</span>
+						</div>
+						<span class="text-xs text-gray-400">Focus search</span>
+					</div>
+
+					<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+						<div class="flex items-center gap-3">
+							<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">N</kbd>
+							<span class="text-gray-700 dark:text-gray-300">เพิ่มงานใหม่</span>
+						</div>
+						<span class="text-xs text-gray-400">New task</span>
+					</div>
+
+					<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+						<div class="flex items-center gap-3">
+							<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">Esc</kbd>
+							<span class="text-gray-700 dark:text-gray-300">ปิด Modal / ยกเลิก</span>
+						</div>
+						<span class="text-xs text-gray-400">Close modal</span>
+					</div>
+
+					<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+						<div class="flex items-center gap-3">
+							<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">?</kbd>
+							<span class="text-gray-700 dark:text-gray-300">แสดงคีย์ลัดทั้งหมด</span>
+						</div>
+						<span class="text-xs text-gray-400">Show shortcuts</span>
+					</div>
+				</div>
+
+				<div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+					<p class="text-xs text-gray-500 dark:text-gray-400 text-center">
+						💡 คีย์ลัดทำงานเมื่อไม่ได้อยู่ใน input หรือ textarea
+					</p>
+				</div>
+
+				<div class="mt-4">
+					<button
+						on:click={() => $showKeyboardShortcuts = false}
+						class="w-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors"
+					>
+						เข้าใจแล้ว
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -1134,5 +1207,20 @@
 	
 	.animate-fade-in {
 		animation: fade-in 0.3s ease-out;
+	}
+
+	@keyframes modal-in {
+		from {
+			opacity: 0;
+			transform: scale(0.95) translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+	}
+
+	.animate-modal-in {
+		animation: modal-in 0.2s ease-out;
 	}
 </style>
