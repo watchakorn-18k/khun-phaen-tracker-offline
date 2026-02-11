@@ -681,41 +681,62 @@ function stopPing() {
     }
 }
 
+// Default server URL for health check
+const DEFAULT_SERVER_URL = 'http://localhost:3001';
+
 // Health check ping to backend (fire and forget, to keep server awake)
+// This runs in background even when not connected to any room
 function startHealthCheckPing() {
     // Clear existing interval if any
     if (healthCheckInterval) {
         clearInterval(healthCheckInterval);
     }
     
-    // Function to perform health check
-    const doHealthCheck = () => {
-        const url = get(serverUrl);
-        if (url) {
-            // Fire and forget - don't care about result
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-            
-            fetch(`${url}/health`, { 
-                method: 'GET',
-                signal: controller.signal
-            }).then(() => {
-                clearTimeout(timeoutId);
-                console.log('💓 Health check ping sent to:', url);
-            }).catch(() => {
-                clearTimeout(timeoutId);
-                // Ignore all errors - this is just to wake up the server
-            });
+    // Function to get URL for health check
+    const getHealthCheckUrl = (): string => {
+        // Priority: saved URL > current serverUrl store > default
+        try {
+            const savedUrl = localStorage.getItem(STORAGE_KEY_URL);
+            if (savedUrl) return savedUrl;
+        } catch (e) {
+            // Ignore localStorage errors
         }
+        
+        const currentUrl = get(serverUrl);
+        if (currentUrl) return currentUrl;
+        
+        return DEFAULT_SERVER_URL;
     };
     
-    // Do immediate first ping
-    doHealthCheck();
+    // Function to perform health check
+    const doHealthCheck = () => {
+        const url = getHealthCheckUrl();
+        
+        // Fire and forget - don't care about result
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        
+        fetch(`${url}/health`, { 
+            method: 'GET',
+            signal: controller.signal,
+            // Prevent caching
+            cache: 'no-store'
+        }).then(() => {
+            clearTimeout(timeoutId);
+            console.log('💓 Background health check ping sent to:', url);
+        }).catch(() => {
+            clearTimeout(timeoutId);
+            // Ignore all errors - this is just to wake up the server
+        });
+    };
+    
+    // Do immediate first ping (delayed slightly to not block page load)
+    setTimeout(doHealthCheck, 2000);
     
     // Then ping every 1 minute
     healthCheckInterval = setInterval(doHealthCheck, 60000);
     
-    console.log('💓 Health check ping started (every 1 minute)');
+    console.log('💓 Background health check ping started (every 1 minute)');
 }
 
 function stopHealthCheckPing() {

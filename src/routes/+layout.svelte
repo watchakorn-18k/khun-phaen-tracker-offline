@@ -1,13 +1,16 @@
 <script lang="ts">
 	import '../app.css';
 	import { initDB } from '$lib/db';
-	import { onMount } from 'svelte';
-	import { CheckSquare, Sun, Moon, Github } from 'lucide-svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { CheckSquare, Sun, Moon, Github, Calendar, Clock } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme';
 	import favicon from '$lib/assets/favicon.svg';
+	import DevTimer from '$lib/components/DevTimer.svelte';
 
 	let loading = true;
 	let error = '';
+	let currentTime = new Date();
+	let timeInterval: ReturnType<typeof setInterval>;
 
 	onMount(async () => {
 		try {
@@ -17,10 +20,43 @@
 			error = 'ไม่สามารถโหลดฐานข้อมูลได้ กรุณารีเฟรชหน้า';
 			loading = false;
 		}
+		
+		// Update time every second
+		timeInterval = setInterval(() => {
+			currentTime = new Date();
+		}, 1000);
+	});
+	
+	onDestroy(() => {
+		if (timeInterval) clearInterval(timeInterval);
 	});
 
 	function toggleTheme() {
 		theme.toggle();
+	}
+	
+	// Format date in Thai
+	function formatDate(date: Date): string {
+		const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+		const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 
+						'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+		
+		const dayName = days[date.getDay()];
+		const day = date.getDate();
+		const month = months[date.getMonth()];
+		const year = date.getFullYear() + 543; // Buddhist year
+		
+		return `วัน${dayName}ที่ ${day} ${month} พ.ศ. ${year}`;
+	}
+	
+	// Format time
+	function formatTime(date: Date): string {
+		return date.toLocaleTimeString('th-TH', { 
+			hour: '2-digit', 
+			minute: '2-digit', 
+			second: '2-digit',
+			hour12: false 
+		});
 	}
 </script>
 
@@ -66,6 +102,17 @@
 						</div>
 					</div>
 					<div class="flex items-center gap-4">
+						<!-- DateTime Pill -->
+						<div class="hidden sm:inline-flex items-center gap-2 bg-slate-800 dark:bg-slate-700 px-2.5 py-1 rounded-md">
+							<span class="text-[11px] text-slate-300 leading-none">
+								{formatDate(currentTime)}
+							</span>
+							<span class="text-slate-500 text-[10px]">|</span>
+							<span class="font-mono text-[11px] text-white tabular-nums leading-none">
+								{formatTime(currentTime)}
+							</span>
+						</div>
+						
 						<!-- Theme Toggle -->
 						<button
 							on:click={toggleTheme}
@@ -89,6 +136,12 @@
 		<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
 			<slot />
 		</main>
+
+		<!-- Dev Timer - Fixed Bottom Bar -->
+		<DevTimer />
+		
+		<!-- Spacer for fixed timer -->
+		<div class="h-10"></div>
 
 		<footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 transition-colors">
 			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

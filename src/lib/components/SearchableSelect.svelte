@@ -11,6 +11,7 @@
 	let searchQuery = '';
 	let dropdownRef: HTMLDivElement;
 	let searchInputRef: HTMLInputElement;
+	const instanceId = Math.random().toString(36).slice(2);
 
 	// Filter by search query
 	$: filteredOptions = searchQuery.trim()
@@ -37,7 +38,16 @@
 	function toggleDropdown() {
 		isOpen = !isOpen;
 		if (isOpen) {
+			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
 			setTimeout(() => searchInputRef?.focus(), 0);
+		}
+	}
+
+	function handleOtherDropdownOpen(event: Event) {
+		const e = event as CustomEvent<string>;
+		if (e.detail !== instanceId) {
+			isOpen = false;
+			searchQuery = '';
 		}
 	}
 
@@ -54,7 +64,7 @@
 	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
 
 <div class="relative" bind:this={dropdownRef}>
 	<!-- Trigger Button -->
@@ -112,7 +122,11 @@
 							on:click={() => selectOption(option.value)}
 						>
 							{#if option.badge}
-								<span class="flex-shrink-0 w-2 h-2 rounded-full {option.badgeColor || 'bg-gray-400'}"></span>
+								{#if option.badgeColor?.startsWith('#')}
+									<span class="flex-shrink-0 w-2 h-2 rounded-full" style="background-color: {option.badgeColor}"></span>
+								{:else}
+									<span class="flex-shrink-0 w-2 h-2 rounded-full {option.badgeColor || 'bg-gray-400'}"></span>
+								{/if}
 							{/if}
 							<span class="truncate flex-1">{option.label}</span>
 							{#if value === option.value}

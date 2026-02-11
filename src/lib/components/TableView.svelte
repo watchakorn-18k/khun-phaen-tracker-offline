@@ -22,7 +22,7 @@
 		return sprints.find(s => s.id === sprintId)?.name || null;
 	}
 
-	type SortColumn = 'title' | 'project' | 'date' | 'status' | 'category' | 'duration_minutes' | 'assignee';
+	type SortColumn = 'title' | 'project' | 'date' | 'status' | 'category' | 'assignee';
 	type SortDirection = 'asc' | 'desc';
 
 	let sortColumn: SortColumn = 'date';
@@ -346,16 +346,6 @@
 							<svelte:component this={getSortIcon('date')} size={12} class="lg:w-3.5 lg:h-3.5" />
 						</button>
 					</th>
-					<th class="px-3 py-2 lg:px-4 lg:py-3 text-left hidden sm:table-cell">
-						<button
-							on:click={() => toggleSort('duration_minutes')}
-							class="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider hover:text-gray-900 dark:hover:text-white"
-						>
-							<Clock size={12} class="lg:w-3.5 lg:h-3.5" />
-							<span class="hidden lg:inline">เวลา</span>
-							<svelte:component this={getSortIcon('duration_minutes')} size={12} class="lg:w-3.5 lg:h-3.5" />
-						</button>
-					</th>
 					<th class="px-3 py-2 lg:px-4 lg:py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider w-20">
 						จัดการ
 					</th>
@@ -450,11 +440,6 @@
 								{/if}
 							</span>
 						</td>
-						<td class="px-3 py-2 lg:px-4 lg:py-3 hidden sm:table-cell">
-							<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap">
-								{formatDuration(task.duration_minutes)}
-							</span>
-						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
 							<div class="flex items-center justify-center gap-1 lg:gap-2">
 								<button
@@ -476,7 +461,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="10" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+						<td colspan="9" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
 							<div class="flex flex-col items-center gap-2">
 								<svg class="w-10 h-10 lg:w-12 lg:h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />

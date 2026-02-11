@@ -3,6 +3,7 @@
 	import type { Sprint } from '$lib/types';
 	import { sprints } from '$lib/stores/sprintStore';
 	import { Flag, Plus, X, Edit2, CheckCircle2, Play, Calendar, AlertCircle, Archive } from 'lucide-svelte';
+	import CustomDatePicker from './CustomDatePicker.svelte';
 
 	const dispatch = createEventDispatcher<{
 		close: void;

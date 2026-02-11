@@ -4,6 +4,9 @@
 	import { CATEGORIES } from '$lib/types';
 	import { Calendar, FileText, Tag, CheckCircle, User, Plus, Folder, X, Flag, GitBranch, Copy, Check } from 'lucide-svelte';
 	import { taskDefaults } from '$lib/stores/taskDefaults';
+	import SearchableSelect from './SearchableSelect.svelte';
+	import CustomDatePicker from './CustomDatePicker.svelte';
+	import SearchableSprintSelect from './SearchableSprintSelect.svelte';
 
 	const dispatch = createEventDispatcher<{
 		submit: Omit<Task, 'id' | 'created_at'>;
@@ -318,6 +321,7 @@
 			assignee_id = $taskDefaults.assignee_id || null;
 			sprint_id = activeSprint?.id || null;
 		}
+
 		resetBranchHelper();
 		showAddAssigneeForm = false;
 		newAssigneeName = '';
@@ -477,16 +481,15 @@
 						<Folder size={14} />
 						โปรเจค
 					</label>
-					<select
+					<SearchableSelect
 						id="project"
 						bind:value={project}
-						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-					>
-						<option value="">-- ไม่ระบุ --</option>
-						{#each projects as proj}
-							<option value={proj.name}>{proj.name}</option>
-						{/each}
-					</select>
+						options={[
+							{ value: '', label: '-- ไม่ระบุ --' },
+							...projects.map(proj => ({ value: proj.name, label: proj.name }))
+						]}
+						placeholder="ค้นหาโปรเจค..."
+					/>
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
@@ -495,11 +498,10 @@
 							<Calendar size={14} />
 							วันที่นัดหมาย (Due Date)
 						</label>
-						<input
-							type="date"
+						<CustomDatePicker
 							bind:value={date}
-							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
-							required
+							placeholder="เลือกวันที่..."
+							on:select={(e) => date = e.detail}
 						/>
 					</div>
 
@@ -508,14 +510,12 @@
 							<Tag size={14} />
 							หมวดหมู่
 						</label>
-						<select
+						<SearchableSelect
 							bind:value={category}
-							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
-						>
-							{#each CATEGORIES as cat}
-								<option value={cat}>{cat}</option>
-							{/each}
-						</select>
+							options={CATEGORIES.map(cat => ({ value: cat, label: cat }))}
+							placeholder="เลือกหมวดหมู่..."
+							showSearch={false}
+						/>
 					</div>
 				</div>
 
@@ -588,15 +588,21 @@
 						</div>
 					{:else}
 						<div class="flex gap-2">
-							<select
-								bind:value={assignee_id}
-								class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
-							>
-								<option value={null}>-- ไม่ระบุ --</option>
-								{#each assignees as assignee}
-									<option value={assignee.id}>{assignee.name}</option>
-								{/each}
-							</select>
+							<div class="flex-1">
+								<SearchableSelect
+									bind:value={assignee_id}
+									options={[
+										{ value: null, label: '-- ไม่ระบุ --' },
+										...assignees.map(assignee => ({ 
+											value: assignee.id, 
+											label: assignee.name,
+											badge: true,
+											badgeColor: assignee.color
+										}))
+									]}
+									placeholder="ค้นหาผู้รับผิดชอบ..."
+								/>
+							</div>
 							<button
 								type="button"
 								on:click={() => showAddAssigneeForm = true}
@@ -626,17 +632,12 @@
 							<Flag size={14} />
 							Sprint
 						</label>
-						<select
+						<SearchableSprintSelect
+							sprints={sprints.filter(s => s.status !== 'completed')}
 							bind:value={sprint_id}
-							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
-						>
-							<option value={null}>-- ไม่ระบุ --</option>
-							{#each sprints.filter(s => s.status !== 'completed') as sprint}
-								<option value={sprint.id}>
-									{sprint.name} {sprint.status === 'active' ? '(กำลังทำ)' : ''}
-								</option>
-							{/each}
-						</select>
+							id="task-sprint"
+							formMode={true}
+						/>
 					</div>
 				{/if}
 

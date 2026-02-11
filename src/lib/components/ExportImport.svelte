@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { Download, Upload, FileSpreadsheet, FileText, ChevronDown } from 'lucide-svelte';
-	import { onMount, onDestroy } from 'svelte';
-	
+
 	const dispatch = createEventDispatcher<{
 		exportCSV: void;
 		exportPDF: void;
 		importCSV: string;
 	}>();
-	
+
 	let fileInput: HTMLInputElement;
 	let showImportConfirm = false;
 	let importContent = '';
 	let importError = '';
 	let showExportDropdown = false;
 	let dropdownRef: HTMLDivElement;
+	const instanceId = Math.random().toString(36).slice(2);
 	
 	function handleFileSelect(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -58,26 +58,40 @@
 		showExportDropdown = false;
 	}
 
+	function toggleExportDropdown() {
+		showExportDropdown = !showExportDropdown;
+		if (showExportDropdown) {
+			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
+		}
+	}
+
+	function handleOtherDropdownOpen(event: Event) {
+		const e = event as CustomEvent<string>;
+		if (e.detail !== instanceId) {
+			showExportDropdown = false;
+		}
+	}
+
 	function handleClickOutside(event: MouseEvent) {
 		if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
 			showExportDropdown = false;
 		}
 	}
 
-	onMount(() => {
-		document.addEventListener('click', handleClickOutside);
-	});
-
-	onDestroy(() => {
-		document.removeEventListener('click', handleClickOutside);
-	});
+	function handleKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			showExportDropdown = false;
+		}
+	}
 </script>
+
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
 
 <div class="flex flex-wrap gap-2">
 	<!-- Export Dropdown -->
 	<div class="relative" bind:this={dropdownRef}>
 		<button
-			on:click|stopPropagation={() => showExportDropdown = !showExportDropdown}
+			on:click={toggleExportDropdown}
 			class="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 bg-success/10 hover:bg-success/20 text-success rounded-lg font-medium transition-colors"
 		>
 			<Download size={16} />

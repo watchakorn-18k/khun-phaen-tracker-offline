@@ -20,6 +20,8 @@
     import { Wifi, WifiOff, Users, Copy, QrCode, RefreshCw, Share2, LogOut, AlertCircle, CheckCircle2, Crown, User } from 'lucide-svelte';
     
     let showPanel = false;
+    let panelRef: HTMLDivElement;
+    const instanceId = Math.random().toString(36).slice(2);
     let joinCode = '';
     let shareData = '';
     let copied = false;
@@ -82,12 +84,40 @@
             default: return 'ไม่เชื่อมต่อ';
         }
     }
+
+    function togglePanel() {
+        showPanel = !showPanel;
+        if (showPanel) {
+            window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
+        }
+    }
+
+    function handleOtherDropdownOpen(event: Event) {
+        const e = event as CustomEvent<string>;
+        if (e.detail !== instanceId) {
+            showPanel = false;
+        }
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+        if (panelRef && !panelRef.contains(event.target as Node)) {
+            showPanel = false;
+        }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+        if (event.key === 'Escape') {
+            showPanel = false;
+        }
+    }
 </script>
 
-<div class="relative">
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+
+<div class="relative" bind:this={panelRef}>
     <!-- Sync Button -->
     <button
-        on:click={() => showPanel = !showPanel}
+        on:click={togglePanel}
         class="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors {($syncStatus === 'connected') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}"
     >
         <svelte:component this={getStatusIcon()} size={18} class={getStatusColor()} />

@@ -17,6 +17,8 @@
     export let onDataMerged: (result: { added: number; updated: number; unchanged: number }) => void = () => {};
     
     let showPanel = false;
+    let panelRef: HTMLDivElement;
+    const instanceId = Math.random().toString(36).slice(2);
     let isSyncing = false;
     let lastMergeResult: { added: number; updated: number; unchanged: number } | null = null;
     let localStats = { total: 0, byStatus: {} as Record<string, number>, lastUpdated: null as string | null };
@@ -79,12 +81,40 @@
         if (!date) return 'ไม่ระบุ';
         return new Date(date).toLocaleString('th-TH');
     }
+
+    function togglePanel() {
+        showPanel = !showPanel;
+        if (showPanel) {
+            window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
+        }
+    }
+
+    function handleOtherDropdownOpen(event: Event) {
+        const e = event as CustomEvent<string>;
+        if (e.detail !== instanceId) {
+            showPanel = false;
+        }
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+        if (panelRef && !panelRef.contains(event.target as Node)) {
+            showPanel = false;
+        }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+        if (event.key === 'Escape') {
+            showPanel = false;
+        }
+    }
 </script>
 
-<div class="relative">
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+
+<div class="relative" bind:this={panelRef}>
     <!-- Main Sync Button -->
     <button
-        on:click={() => showPanel = !showPanel}
+        on:click={togglePanel}
         disabled={$serverStatus !== 'connected'}
         class="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors {($serverStatus === 'connected') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}"
         title={$serverStatus === 'connected' ? 'คลิกเพื่อซิงค์ข้อมูล' : 'ไม่ได้เชื่อมต่อ'}

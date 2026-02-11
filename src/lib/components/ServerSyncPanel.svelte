@@ -20,7 +20,7 @@
         updateServerUrl
     } from '$lib/stores/server-sync';
     import { exportAllData, importAllData, getTasks } from '$lib/db';
-    import { Server, Link, LogOut, Users, RefreshCw, Copy, CheckCircle2, AlertCircle, Globe, Save, Edit2, Crown } from 'lucide-svelte';
+    import { Server, Link, LogOut, Users, RefreshCw, Copy, CheckCircle2, AlertCircle, Globe, Save, Edit2, Crown, Cloud, CloudOff, CloudCog } from 'lucide-svelte';
     
     const dispatch = createEventDispatcher<{
         dataImported: { count: number };
@@ -67,6 +67,8 @@
     );
     
     let showPanel = false;
+    let panelRef: HTMLDivElement;
+    const instanceId = Math.random().toString(36).slice(2);
     let hostUrl = 'http://localhost:3001';
     let joinRoomCode = '';
     let peerName = '';
@@ -211,9 +213,9 @@
     
     function getStatusIcon() {
         switch ($serverStatus) {
-            case 'connected': return CheckCircle2;
-            case 'connecting': return RefreshCw;
-            default: return AlertCircle;
+            case 'connected': return Cloud;
+            case 'connecting': return CloudCog;
+            default: return CloudOff;
         }
     }
     
@@ -224,18 +226,50 @@
             default: return 'text-gray-400';
         }
     }
+
+    function togglePanel() {
+        showPanel = !showPanel;
+        if (showPanel) {
+            window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
+        }
+    }
+
+    function handleOtherDropdownOpen(event: Event) {
+        const e = event as CustomEvent<string>;
+        if (e.detail !== instanceId) {
+            showPanel = false;
+        }
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+        if (panelRef && !panelRef.contains(event.target as Node)) {
+            showPanel = false;
+        }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+        if (event.key === 'Escape') {
+            showPanel = false;
+        }
+    }
 </script>
 
-<div class="relative">
-    <!-- Server Sync Button -->
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
+
+<div class="relative" bind:this={panelRef}>
+    <!-- Server Sync Button (Icon Only) -->
     <button
-        on:click={() => showPanel = !showPanel}
-        class="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors {($serverStatus === 'connected') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}"
+        on:click={togglePanel}
+        class="relative flex items-center justify-center w-10 h-10 rounded-lg font-medium transition-colors {($serverStatus === 'connected') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}"
+        title="Server Sync"
     >
-        <svelte:component this={getStatusIcon()} size={18} class={getStatusColor()} />
-        <span class="hidden sm:inline">Server Sync</span>
+        <svelte:component this={getStatusIcon()} size={20} class={getStatusColor()} />
         {#if $serverStatus === 'connected'}
-            <span class="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded-full">{$serverPeers.length + 1}</span>
+            <span class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold">
+                {$serverPeers.length + 1}
+            </span>
+        {:else if $serverStatus === 'connecting'}
+            <span class="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
         {/if}
     </button>
     

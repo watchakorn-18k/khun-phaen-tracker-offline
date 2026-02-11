@@ -23,6 +23,7 @@
 	import SprintManager from '$lib/components/SprintManager.svelte';
 	import SearchableSprintSelect from '$lib/components/SearchableSprintSelect.svelte';
 	import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+	import CustomDatePicker from '$lib/components/CustomDatePicker.svelte';
 	
 	const FILTER_STORAGE_KEY = 'task-filters';
 	const DEFAULT_FILTERS: FilterOptions = {
@@ -70,6 +71,8 @@
 	let showProjectManager = false;
 	let searchInput = '';
 	let showTabSettings = false;
+	let tabSettingsRef: HTMLDivElement;
+	const tabSettingsId = Math.random().toString(36).slice(2);
 	let showSprintManager = false;
 	let showChangeSprintModal = false;
 	let selectedTaskIdsForSprintChange: number[] = [];
@@ -244,6 +247,26 @@
 		message = msg;
 		messageType = type;
 		setTimeout(() => message = '', 3000);
+	}
+
+	function toggleTabSettings() {
+		showTabSettings = !showTabSettings;
+		if (showTabSettings) {
+			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: tabSettingsId }));
+		}
+	}
+
+	function handleTabSettingsDropdownOpen(event: Event) {
+		const e = event as CustomEvent<string>;
+		if (e.detail !== tabSettingsId) {
+			showTabSettings = false;
+		}
+	}
+
+	function handleTabSettingsClickOutside(event: MouseEvent) {
+		if (tabSettingsRef && !tabSettingsRef.contains(event.target as Node)) {
+			showTabSettings = false;
+		}
 	}
 
 	function applySprintUpdateToLocalState(taskIds: number[], sprintId: number | null) {
@@ -762,6 +785,8 @@
 	}
 </script>
 
+<svelte:window on:click={handleTabSettingsClickOutside} on:dropdown-open={handleTabSettingsDropdownOpen} />
+
 <!-- Message Toast -->
 {#if message}
 	<div class="fixed top-20 right-4 z-50 animate-fade-in">
@@ -907,9 +932,9 @@
 		</div>
 		
 		<!-- Tab Settings -->
-		<div class="relative">
+		<div class="relative" bind:this={tabSettingsRef}>
 			<button
-				on:click={() => showTabSettings = !showTabSettings}
+				on:click={toggleTabSettings}
 				class="flex items-center justify-center gap-2 px-4 py-2 h-10 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
 				title="ตั้งค่าแท็บ"
 			>

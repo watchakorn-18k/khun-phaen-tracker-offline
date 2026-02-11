@@ -4,11 +4,13 @@
 	export let sprints: Sprint[] = [];
 	export let value: number | 'all' | null = 'all';
 	export let id: string = 'sprint';
+	export let formMode: boolean = false; // When true, hides 'all' option and changes labels for form usage
 
 	let isOpen = false;
 	let searchQuery = '';
 	let dropdownRef: HTMLDivElement;
 	let searchInputRef: HTMLInputElement;
+	const instanceId = Math.random().toString(36).slice(2);
 
 	// Sort sprints by date (newest first), then by status
 	$: sortedSprints = [...sprints].sort((a, b) => {
@@ -34,10 +36,10 @@
 	$: selectedLabel = getSelectedLabel(value, sprints);
 
 	function getSelectedLabel(val: number | 'all' | null, sprintList: Sprint[]): string {
-		if (val === 'all') return 'ทั้งหมด';
-		if (val === null) return 'ไม่มี Sprint';
+		if (val === 'all') return formMode ? '-- ไม่ระบุ --' : 'ทั้งหมด';
+		if (val === null) return formMode ? '-- ไม่ระบุ --' : 'ไม่มี Sprint';
 		const sprint = sprintList.find(s => s.id === val);
-		if (!sprint) return 'ทั้งหมด';
+		if (!sprint) return formMode ? '-- ไม่ระบุ --' : 'ทั้งหมด';
 		const statusText = sprint.status === 'active' ? ' (กำลังทำ)' : 
 			sprint.status === 'completed' ? ' (เสร็จสิ้น)' : '';
 		return sprint.name + statusText;
@@ -52,8 +54,16 @@
 	function toggleDropdown() {
 		isOpen = !isOpen;
 		if (isOpen) {
-			// Focus search input after dropdown opens
+			window.dispatchEvent(new CustomEvent('dropdown-open', { detail: instanceId }));
 			setTimeout(() => searchInputRef?.focus(), 0);
+		}
+	}
+
+	function handleOtherDropdownOpen(event: Event) {
+		const e = event as CustomEvent<string>;
+		if (e.detail !== instanceId) {
+			isOpen = false;
+			searchQuery = '';
 		}
 	}
 
@@ -70,7 +80,7 @@
 	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} />
+<svelte:window on:click={handleClickOutside} on:keydown={handleKeyDown} on:dropdown-open={handleOtherDropdownOpen} />
 
 <div class="relative" bind:this={dropdownRef}>
 	<!-- Trigger Button -->
@@ -110,19 +120,21 @@
 			<!-- Options -->
 			<div class="overflow-y-auto max-h-60">
 				<!-- Default options -->
-				<button
-					type="button"
-					class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 {value === 'all' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-900 dark:text-gray-100'}"
-					on:click={() => selectSprint('all')}
-				>
-					ทั้งหมด
-				</button>
+				{#if !formMode}
+					<button
+						type="button"
+						class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 {value === 'all' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-900 dark:text-gray-100'}"
+						on:click={() => selectSprint('all')}
+					>
+						ทั้งหมด
+					</button>
+				{/if}
 				<button
 					type="button"
 					class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 {value === null ? 'bg-primary/10 text-primary font-medium' : 'text-gray-900 dark:text-gray-100'}"
 					on:click={() => selectSprint(null)}
 				>
-					ไม่มี Sprint
+					{formMode ? '-- ไม่ระบุ --' : 'ไม่มี Sprint'}
 				</button>
 
 				<div class="border-t border-gray-200 dark:border-gray-700 my-1"></div>
