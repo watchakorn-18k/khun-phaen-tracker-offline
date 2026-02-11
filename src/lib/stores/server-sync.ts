@@ -55,7 +55,7 @@ export function enableAutoImport() {
                     console.log(`✅ CRDT merge: +${result.added} ~${result.updated} tasks`);
                     
                     // Sync merged CRDT tasks back to SQLite
-                    if ($crdtReady) {
+                    if (get(crdtReady)) {
                         const crdtTasks = getCRDTTasks();
                         // This will be handled by the app reloading data
                         console.log(`📊 ${crdtTasks.length} tasks in CRDT after merge`);
@@ -118,7 +118,15 @@ export const currentPeerIdStore = writable<string>('');
 // Callbacks for sync operations
 let onDocumentReceived: ((data: string) => Promise<void>) | null = null;
 let onSyncRequest: (() => Promise<string>) | null = null;
-let onDocumentMerge: ((data: string) => Promise<{ added: number; updated: number; unchanged: number }>) | null = null;
+export type MergeResult =
+	| { added: number; updated: number; unchanged: number }
+	| {
+		tasks: { added: number; updated: number; unchanged: number };
+		projects: { added: number; updated: number };
+		assignees: { added: number; updated: number };
+		sprints: { added: number; updated: number };
+	};
+let onDocumentMerge: ((data: string) => Promise<MergeResult>) | null = null;
 
 let ws: WebSocket | null = null;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
@@ -281,7 +289,7 @@ export function updateServerUrl(url: string) {
 export function setSyncCallbacks(
     onReceive: (data: string) => Promise<void>,
     onRequest: () => Promise<string>,
-    onMerge?: (data: string) => Promise<{ added: number; updated: number; unchanged: number }>
+    onMerge?: (data: string) => Promise<MergeResult>
 ) {
     console.log('🔄 Sync callbacks registered');
     onDocumentReceived = onReceive;
@@ -294,7 +302,7 @@ export function setSyncCallbacks(
 
 // Set merge callback separately
 export function setMergeCallback(
-    onMerge: (data: string) => Promise<{ added: number; updated: number; unchanged: number }>
+    onMerge: (data: string) => Promise<MergeResult>
 ) {
     onDocumentMerge = onMerge;
     console.log('🔄 Merge callback set');
@@ -604,7 +612,7 @@ export function requestSyncFromServer() {
 }
 
 // Request merge from server (uses onDocumentMerge callback)
-export function requestMergeFromServer(): Promise<{ added: number; updated: number; unchanged: number }> {
+export function requestMergeFromServer(): Promise<MergeResult> {
     return new Promise((resolve, reject) => {
         if (!get(serverRoomCode)) {
             reject(new Error('ไม่ได้เชื่อมต่อห้อง'));
@@ -642,7 +650,11 @@ export function requestMergeFromServer(): Promise<{ added: number; updated: numb
                 }
                 
                 const result = await onDocumentMerge!(data);
-                syncMessage.set(`Merge สำเร็จ: +${result.added} ~${result.updated}`);
+                if ('tasks' in result) {
+                    syncMessage.set(`Merge สำเร็จ: +${result.tasks.added} ~${result.tasks.updated}`);
+                } else {
+                    syncMessage.set(`Merge สำเร็จ: +${result.added} ~${result.updated}`);
+                }
                 setTimeout(() => syncMessage.set(''), 3000);
                 
                 // Restore original callback

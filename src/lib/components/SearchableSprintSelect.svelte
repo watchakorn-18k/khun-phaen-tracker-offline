@@ -13,7 +13,8 @@
 
 
 	// Sort sprints by date (newest first), then by status
-	$: sortedSprints = [...sprints].sort((a, b) => {
+	$: sprintsWithId = sprints.filter((s): s is Sprint & { id: number } => s.id !== undefined);
+	$: sortedSprints = [...sprintsWithId].sort((a, b) => {
 		// Active sprint first
 		if (a.status === 'active' && b.status !== 'active') return -1;
 		if (b.status === 'active' && a.status !== 'active') return 1;

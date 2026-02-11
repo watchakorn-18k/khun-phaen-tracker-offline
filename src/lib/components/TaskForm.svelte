@@ -593,7 +593,9 @@
 									bind:value={assignee_id}
 									options={[
 										{ value: null, label: '-- ไม่ระบุ --' },
-										...assignees.map(assignee => ({ 
+										...assignees
+										.filter((assignee): assignee is typeof assignee & { id: number } => assignee.id !== undefined)
+										.map(assignee => ({ 
 											value: assignee.id, 
 											label: assignee.name,
 											badge: true,

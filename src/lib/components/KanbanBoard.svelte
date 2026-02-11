@@ -51,7 +51,8 @@
 		}
 
 		if ((e.detail.info.trigger as any) === (TRIGGERS.DROPPED_INTO_ZONE as any)) {
-			const droppedId = e.detail.info.id;
+			const droppedId = Number(e.detail.info.id);
+			if (!Number.isFinite(droppedId)) return;
 			const originalTask = tasks.find(t => t.id === droppedId);
 
 			if (originalTask && originalTask.status !== status) {

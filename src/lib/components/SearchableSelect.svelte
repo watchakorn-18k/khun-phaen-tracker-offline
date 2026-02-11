@@ -1,7 +1,7 @@
 <script lang="ts">
 	export let id: string = 'select';
 	export let value: string | number | null = 'all';
-	export let options: Array<{ value: string | number | null; label: string; badge?: string; badgeColor?: string }> = [];
+	export let options: Array<{ value: string | number | null; label: string; badge?: boolean; badgeColor?: string }> = [];
 	export let placeholder: string = 'ค้นหา...';
 	export let emptyText: string = 'ไม่พบรายการ';
 	export let showSearch: boolean = true;

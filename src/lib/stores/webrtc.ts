@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 // Simple Signaling Server using BroadcastChannel (same browser) or localStorage (cross-tab)
 const SIGNAL_CHANNEL = 'khu-phaen-sync';
 
-export const webrtcStatus = writable<'idle' | 'connecting' | 'connected' | 'host'>('idle');
+export const webrtcStatus = writable<'idle' | 'connecting' | 'connected' | 'host' | 'syncing' | 'error'>('idle');
 export const myPeerId = writable<string>('');
 export const hostPeerId = writable<string>('');
 export const connectedPeersList = writable<string[]>([]);

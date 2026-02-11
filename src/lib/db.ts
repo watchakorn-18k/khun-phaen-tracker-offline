@@ -15,6 +15,14 @@ const LEGACY_DB_NAME = 'task-tracker-db';
 const LEGACY_DB_BACKUP_NAME = 'task-tracker-db-backup-before-v2';
 const MIGRATION_FLAG = 'task-tracker-db-migrated-to-v2';
 
+export function shouldBindParams(params?: any[]): boolean {
+	return Array.isArray(params) && params.length > 0;
+}
+
+export function normalizeSqlValue<T = any>(value: T): T | number {
+	return typeof value === 'bigint' ? Number(value) : value;
+}
+
 // Initialize compression on module load (JS only, no WASM)
 if (typeof window !== 'undefined') {
 	initCompression(); // JS compression, no delay needed
@@ -137,7 +145,7 @@ function getTaskCountFromBytes(bytes: Uint8Array): number {
 
 function runSql(sql: string, params?: any[], targetDb: any = db): void {
 	if (!targetDb) throw new Error('DB not initialized');
-	if (params && params.length > 0) {
+	if (shouldBindParams(params)) {
 		targetDb.exec({ sql, bind: params });
 		return;
 	}
@@ -392,7 +400,7 @@ function execQuery(sql: string, params?: any[]): { columns: string[], values: an
 	if (!db) throw new Error('DB not initialized');
 	
 	const stmt = db.prepare(sql);
-	if (params && params.length > 0) {
+	if (shouldBindParams(params)) {
 		stmt.bind(params);
 	}
 	
@@ -410,8 +418,7 @@ function execQuery(sql: string, params?: any[]): { columns: string[], values: an
 	const columns = Object.keys(results[0]);
 	const values = results.map(row =>
 		columns.map(col => {
-			const val = (row as any)[col];
-			return typeof val === 'bigint' ? Number(val) : val;
+			return normalizeSqlValue((row as any)[col]);
 		})
 	);
 	

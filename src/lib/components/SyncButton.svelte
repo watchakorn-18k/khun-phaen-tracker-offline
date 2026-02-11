@@ -10,6 +10,7 @@
         requestMergeFromServer,
         getServerInfo
     } from '$lib/stores/server-sync';
+    import type { MergeResult } from '$lib/stores/server-sync';
     import { mergeTasksFromCSV, getTaskStats, exportToCSV } from '$lib/db';
     import { RefreshCw, Users, Database, Clock, ArrowDown, ArrowUp, CheckCircle, AlertCircle } from 'lucide-svelte';
     
@@ -34,6 +35,13 @@
             console.error('Failed to get stats:', e);
         }
     }
+
+    function normalizeMergeResult(result: MergeResult): { added: number; updated: number; unchanged: number } {
+        if ('tasks' in result) {
+            return result.tasks;
+        }
+        return result;
+    }
     
     async function handlePullLatest() {
         if (!$serverRoomCode) {
@@ -47,15 +55,16 @@
         try {
             // Request latest data from server with merge
             const result = await requestMergeFromServer();
-            lastMergeResult = result;
+            const normalized = normalizeMergeResult(result);
+            lastMergeResult = normalized;
             
             // Notify parent
-            onDataMerged(result);
+            onDataMerged(normalized);
             
             // Refresh local stats
             updateLocalStats();
             
-            syncMessage.set(`Merge สำเร็จ: +${result.added} ~${result.updated}`);
+            syncMessage.set(`Merge สำเร็จ: +${normalized.added} ~${normalized.updated}`);
         } catch (e) {
             console.error('Pull failed:', e);
             syncMessage.set('ดึงข้อมูลล้มเหลว');

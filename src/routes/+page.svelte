@@ -2836,8 +2836,10 @@
 						options={[
 							{ value: 'all', label: 'ทั้งหมด' },
 							{ value: null, label: 'ไม่ระบุผู้รับผิดชอบ', badge: true, badgeColor: 'bg-gray-300' },
-							...assignees.map(a => ({ 
-								value: a.id, 
+							...assignees
+							.filter((a) => a.id !== undefined)
+							.map(a => ({ 
+								value: a.id!, 
 								label: a.name,
 								badge: true,
 								badgeColor: a.color ? '' : 'bg-indigo-500'
