@@ -4,10 +4,11 @@
 	import { onMount } from 'svelte';
 	import { CheckSquare, Sun, Moon, Github } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme';
-	
+	import favicon from '$lib/assets/favicon.svg';
+
 	let loading = true;
 	let error = '';
-	
+
 	onMount(async () => {
 		try {
 			await initDB();
@@ -17,11 +18,15 @@
 			loading = false;
 		}
 	});
-	
+
 	function toggleTheme() {
 		theme.toggle();
 	}
 </script>
+
+<svelte:head>
+	<link rel="icon" href={favicon} type="image/svg+xml" />
+</svelte:head>
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors flex flex-col">
 	{#if loading}
