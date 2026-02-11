@@ -71,6 +71,12 @@
 	let searchInput = '';
 	let showTabSettings = false;
 	let showSprintManager = false;
+	let showChangeSprintModal = false;
+	let selectedTaskIdsForSprintChange: number[] = [];
+	let showChangeStatusModal = false;
+	let selectedTaskIdsForStatusChange: number[] = [];
+	let showChangeProjectModal = false;
+	let selectedTaskIdsForProjectChange: number[] = [];
 	
 	let filters: FilterOptions = { ...DEFAULT_FILTERS };
 	let selectedSprint: Sprint | null = null;
@@ -392,6 +398,87 @@
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการลบหลายรายการ', 'error');
 		}
+	}
+
+	function handleChangeSprintRequest(event: CustomEvent<number[]>) {
+		selectedTaskIdsForSprintChange = event.detail;
+		showChangeSprintModal = true;
+	}
+
+	async function handleConfirmChangeSprint(sprintId: number | null) {
+		if (selectedTaskIdsForSprintChange.length === 0) return;
+		
+		showChangeSprintModal = false;
+		
+		await handleMoveTasksToSprint(
+			new CustomEvent('moveTasksToSprint', {
+				detail: { sprintId: sprintId === null ? -1 : sprintId, taskIds: selectedTaskIdsForSprintChange }
+			})
+		);
+		
+		selectedTaskIdsForSprintChange = [];
+	}
+
+	function handleChangeStatusRequest(event: CustomEvent<number[]>) {
+		selectedTaskIdsForStatusChange = event.detail;
+		showChangeStatusModal = true;
+	}
+
+	async function handleConfirmChangeStatus(newStatus: Task['status']) {
+		if (selectedTaskIdsForStatusChange.length === 0) return;
+		
+		showChangeStatusModal = false;
+		
+		try {
+			const updateResults = await Promise.allSettled(
+				selectedTaskIdsForStatusChange.map(id => updateTask(id, { status: newStatus }))
+			);
+			const updatedCount = updateResults.filter(result => result.status === 'fulfilled').length;
+			const failedCount = selectedTaskIdsForStatusChange.length - updatedCount;
+
+			await loadData();
+
+			if (failedCount === 0) {
+				showMessage(`เปลี่ยนสถานะสำเร็จ ${updatedCount} รายการ`);
+			} else {
+				showMessage(`เปลี่ยนสถานะสำเร็จ ${updatedCount} รายการ, ล้มเหลว ${failedCount} รายการ`, 'error');
+			}
+		} catch (e) {
+			showMessage('เกิดข้อผิดพลาดในการเปลี่ยนสถานะ', 'error');
+		}
+		
+		selectedTaskIdsForStatusChange = [];
+	}
+
+	function handleChangeProjectRequest(event: CustomEvent<number[]>) {
+		selectedTaskIdsForProjectChange = event.detail;
+		showChangeProjectModal = true;
+	}
+
+	async function handleConfirmChangeProject(projectName: string | null) {
+		if (selectedTaskIdsForProjectChange.length === 0) return;
+		
+		showChangeProjectModal = false;
+		
+		try {
+			const updateResults = await Promise.allSettled(
+				selectedTaskIdsForProjectChange.map(id => updateTask(id, { project: projectName }))
+			);
+			const updatedCount = updateResults.filter(result => result.status === 'fulfilled').length;
+			const failedCount = selectedTaskIdsForProjectChange.length - updatedCount;
+
+			await loadData();
+
+			if (failedCount === 0) {
+				showMessage(`เปลี่ยน Project สำเร็จ ${updatedCount} รายการ`);
+			} else {
+				showMessage(`เปลี่ยน Project สำเร็จ ${updatedCount} รายการ, ล้มเหลว ${failedCount} รายการ`, 'error');
+			}
+		} catch (e) {
+			showMessage('เกิดข้อผิดพลาดในการเปลี่ยน Project', 'error');
+		}
+		
+		selectedTaskIdsForProjectChange = [];
 	}
 	
 	function handleEditTask(event: CustomEvent<Task>) {
@@ -1003,6 +1090,9 @@
 				on:edit={handleEditTask}
 				on:delete={handleDeleteTask}
 				on:deleteSelected={handleDeleteSelectedTasks}
+				on:changeSprint={handleChangeSprintRequest}
+				on:changeStatus={handleChangeStatusRequest}
+				on:changeProject={handleChangeProjectRequest}
 				on:statusChange={handleStatusChange}
 			/>
 		{/if}
@@ -1031,6 +1121,189 @@
 		/>
 	{/if}
 	
+	<!-- Change Sprint Modal -->
+	{#if showChangeSprintModal}
+		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+						เปลี่ยน Sprint
+					</h3>
+					<button
+						on:click={() => { showChangeSprintModal = false; selectedTaskIdsForSprintChange = []; }}
+						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+					>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+					</button>
+				</div>
+				
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					เลือก Sprint สำหรับ {selectedTaskIdsForSprintChange.length} งานที่เลือก
+				</p>
+				
+				<div class="space-y-2 max-h-80 overflow-y-auto">
+					<!-- No Sprint option -->
+					<button
+						on:click={() => handleConfirmChangeSprint(null)}
+						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+					>
+						<div class="flex items-center gap-2">
+							<span class="text-gray-500 dark:text-gray-400">ไม่มี Sprint</span>
+						</div>
+					</button>
+					
+					{#each $sprints.filter(s => s.status !== 'completed').sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()) as sprint}
+						<button
+							on:click={() => handleConfirmChangeSprint(sprint.id)}
+							class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+						>
+							<div class="flex items-center justify-between">
+								<span class="font-medium text-gray-900 dark:text-white">{sprint.name}</span>
+								{#if sprint.status === 'active'}
+									<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full">กำลังทำ</span>
+								{:else}
+									<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">วางแผน</span>
+								{/if}
+							</div>
+							{#if sprint.goal}
+								<p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">{sprint.goal}</p>
+							{/if}
+						</button>
+					{/each}
+				</div>
+				
+				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						on:click={() => { showChangeSprintModal = false; selectedTaskIdsForSprintChange = []; }}
+						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+					>
+						ยกเลิก
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+	
+	<!-- Change Status Modal -->
+	{#if showChangeStatusModal}
+		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+						เปลี่ยนสถานะ
+					</h3>
+					<button
+						on:click={() => { showChangeStatusModal = false; selectedTaskIdsForStatusChange = []; }}
+						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+					>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+					</button>
+				</div>
+				
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					เลือกสถานะสำหรับ {selectedTaskIdsForStatusChange.length} งานที่เลือก
+				</p>
+				
+				<div class="space-y-2">
+					<button
+						on:click={() => handleConfirmChangeStatus('todo')}
+						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+					>
+						<span class="w-3 h-3 rounded-full bg-gray-400"></span>
+						<div>
+							<span class="font-medium text-gray-900 dark:text-white">รอดำเนินการ</span>
+							<p class="text-xs text-gray-500">งานที่ยังไม่เริ่มทำ</p>
+						</div>
+					</button>
+					
+					<button
+						on:click={() => handleConfirmChangeStatus('in-progress')}
+						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+					>
+						<span class="w-3 h-3 rounded-full bg-blue-500"></span>
+						<div>
+							<span class="font-medium text-gray-900 dark:text-white">กำลังทำ</span>
+							<p class="text-xs text-gray-500">งานที่กำลังดำเนินการอยู่</p>
+						</div>
+					</button>
+					
+					<button
+						on:click={() => handleConfirmChangeStatus('done')}
+						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3"
+					>
+						<span class="w-3 h-3 rounded-full bg-green-500"></span>
+						<div>
+							<span class="font-medium text-gray-900 dark:text-white">เสร็จแล้ว</span>
+							<p class="text-xs text-gray-500">งานที่เสร็จสิ้นแล้ว</p>
+						</div>
+					</button>
+				</div>
+				
+				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						on:click={() => { showChangeStatusModal = false; selectedTaskIdsForStatusChange = []; }}
+						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+					>
+						ยกเลิก
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+	
+	<!-- Change Project Modal -->
+	{#if showChangeProjectModal}
+		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+						เปลี่ยน Project
+					</h3>
+					<button
+						on:click={() => { showChangeProjectModal = false; selectedTaskIdsForProjectChange = []; }}
+						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+					>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+					</button>
+				</div>
+				
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					เลือก Project สำหรับ {selectedTaskIdsForProjectChange.length} งานที่เลือก
+				</p>
+				
+				<div class="space-y-2 max-h-80 overflow-y-auto">
+					<!-- No Project option -->
+					<button
+						on:click={() => handleConfirmChangeProject(null)}
+						class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+					>
+						<div class="flex items-center gap-2">
+							<span class="text-gray-500 dark:text-gray-400">ไม่มี Project</span>
+						</div>
+					</button>
+					
+					{#each projects.sort() as project}
+						<button
+							on:click={() => handleConfirmChangeProject(project)}
+							class="w-full px-4 py-3 text-left rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+						>
+							<span class="font-medium text-gray-900 dark:text-white">{project}</span>
+						</button>
+					{/each}
+				</div>
+				
+				<div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						on:click={() => { showChangeProjectModal = false; selectedTaskIdsForProjectChange = []; }}
+						class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+					>
+						ยกเลิก
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+	
 	<!-- Project Manager Modal -->
 	{#if showProjectManager}
 		<ProjectManager
@@ -1052,5 +1325,12 @@
 	
 	.animate-fade-in {
 		animation: fade-in 0.3s ease-out;
+	}
+	
+	.line-clamp-1 {
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 </style>

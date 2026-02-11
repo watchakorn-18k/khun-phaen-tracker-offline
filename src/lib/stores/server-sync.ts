@@ -11,6 +11,26 @@ export function enableAutoImport() {
     autoImportEnabled = true;
     console.log('✅ Auto-import enabled');
     
+    // Update last seen on load
+    updateLastSeen();
+    
+    // Update last seen before page unload
+    if (typeof window !== 'undefined') {
+        window.addEventListener('beforeunload', () => {
+            updateLastSeen();
+        });
+        
+        // Update last seen periodically while connected (every 30 seconds)
+        setInterval(() => {
+            if (get(serverStatus) === 'connected') {
+                updateLastSeen();
+            }
+        }, 30000);
+        
+        // Start health check ping to keep backend awake (every 1 minute)
+        startHealthCheckPing();
+    }
+    
     // Set up default callbacks for auto-import (sync from server)
     if (!onDocumentReceived) {
         onDocumentReceived = async (csvData: string) => {
@@ -42,6 +62,8 @@ const STORAGE_KEY_URL = 'sync-server-url';
 const STORAGE_KEY_ROOM = 'sync-room-code';
 const STORAGE_KEY_IS_HOST = 'sync-is-host';
 const STORAGE_KEY_PEER_ID = 'sync-peer-id';
+const STORAGE_KEY_LAST_SEEN = 'sync-last-seen';
+const AUTO_DISCONNECT_AFTER_MINUTES = 5; // ยกเลิกการเชื่อมต่ออัตโนมัติถ้าไม่ได้เข้ามา 5 นาที
 
 // Server connection state
 export const serverUrl = writable<string>('');
@@ -60,6 +82,7 @@ let onDocumentMerge: ((data: string) => Promise<{ added: number; updated: number
 let ws: WebSocket | null = null;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 
 // Persistent peer ID
 let currentPeerId: string | null = null;
@@ -71,9 +94,41 @@ function saveConnectionSettings(url: string, roomCode: string, isHost: boolean, 
         localStorage.setItem(STORAGE_KEY_ROOM, roomCode);
         localStorage.setItem(STORAGE_KEY_IS_HOST, JSON.stringify(isHost));
         localStorage.setItem(STORAGE_KEY_PEER_ID, peerId);
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN, Date.now().toString());
         console.log('💾 Saved sync settings:', { url, roomCode, isHost, peerId: peerId.slice(0, 8) });
     } catch (e) {
         console.error('Failed to save sync settings:', e);
+    }
+}
+
+// Update last seen timestamp
+function updateLastSeen() {
+    try {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN, Date.now().toString());
+    } catch (e) {
+        console.error('Failed to update last seen:', e);
+    }
+}
+
+// Check if should auto-reconnect based on last seen time
+function shouldAutoReconnect(): boolean {
+    try {
+        const lastSeen = localStorage.getItem(STORAGE_KEY_LAST_SEEN);
+        if (!lastSeen) return true; // No last seen, allow reconnect
+        
+        const lastSeenTime = parseInt(lastSeen, 10);
+        const now = Date.now();
+        const diffMinutes = (now - lastSeenTime) / (1000 * 60);
+        
+        if (diffMinutes > AUTO_DISCONNECT_AFTER_MINUTES) {
+            console.log(`⏰ Last seen ${diffMinutes.toFixed(1)} minutes ago, clearing saved connection`);
+            clearConnectionSettings();
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to check last seen:', e);
+        return true;
     }
 }
 
@@ -85,6 +140,7 @@ function clearConnectionSettings() {
         localStorage.removeItem(STORAGE_KEY_ROOM);
         localStorage.removeItem(STORAGE_KEY_IS_HOST);
         localStorage.removeItem(STORAGE_KEY_PEER_ID);
+        localStorage.removeItem(STORAGE_KEY_LAST_SEEN);
         console.log('🗑️ Cleared room settings (kept URL)');
     } catch (e) {
         console.error('Failed to clear sync settings:', e);
@@ -115,6 +171,12 @@ export function loadSavedConnection(): { url: string; roomCode: string; isHost: 
 
 // Auto-reconnect with saved settings
 export async function autoReconnect(): Promise<boolean> {
+    // Check if we should auto-reconnect based on last seen time
+    if (!shouldAutoReconnect()) {
+        console.log('⏰ Auto-reconnect skipped: away too long (>5 minutes)');
+        return false;
+    }
+    
     const saved = loadSavedConnection();
     if (!saved) {
         console.log('ℹ️ No saved connection found');
@@ -219,6 +281,7 @@ function connectToServer(url: string) {
             serverStatus.set('connected');
             syncMessage.set('เชื่อมต่อสำเร็จ');
             startPing();
+            updateLastSeen(); // Update last seen on successful connection
             
             // Auto-clear message after 2 seconds
             setTimeout(() => syncMessage.set(''), 2000);
@@ -429,6 +492,7 @@ export function leaveServerRoom() {
     syncMessage.set('ออกจากห้องแล้ว');
     
     stopPing();
+    stopHealthCheckPing();
     if (reconnectInterval) {
         clearInterval(reconnectInterval);
         reconnectInterval = null;
@@ -570,6 +634,7 @@ function sendMessage(msg: any) {
         const json = JSON.stringify(msg);
         console.log('📨 WS Send:', msg.action || msg.type, '- length:', json.length);
         ws.send(json);
+        updateLastSeen(); // Update last seen on any message sent
     } else {
         console.warn('⚠️ WebSocket not connected, state:', ws?.readyState);
         syncMessage.set('ไม่ได้เชื่อมต่อ');
@@ -613,6 +678,51 @@ function stopPing() {
     if (pingInterval) {
         clearInterval(pingInterval);
         pingInterval = null;
+    }
+}
+
+// Health check ping to backend (fire and forget, to keep server awake)
+function startHealthCheckPing() {
+    // Clear existing interval if any
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+    }
+    
+    // Function to perform health check
+    const doHealthCheck = () => {
+        const url = get(serverUrl);
+        if (url) {
+            // Fire and forget - don't care about result
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+            
+            fetch(`${url}/health`, { 
+                method: 'GET',
+                signal: controller.signal
+            }).then(() => {
+                clearTimeout(timeoutId);
+                console.log('💓 Health check ping sent to:', url);
+            }).catch(() => {
+                clearTimeout(timeoutId);
+                // Ignore all errors - this is just to wake up the server
+            });
+        }
+    };
+    
+    // Do immediate first ping
+    doHealthCheck();
+    
+    // Then ping every 1 minute
+    healthCheckInterval = setInterval(doHealthCheck, 60000);
+    
+    console.log('💓 Health check ping started (every 1 minute)');
+}
+
+function stopHealthCheckPing() {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+        console.log('💓 Health check ping stopped');
     }
 }
 

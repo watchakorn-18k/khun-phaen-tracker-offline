@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import type { Task, Sprint } from '$lib/types';
-	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp, Flag } from 'lucide-svelte';
+	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp, Flag, X } from 'lucide-svelte';
 	import Pagination from './Pagination.svelte';
 
 	export let tasks: Task[] = [];
@@ -12,6 +12,9 @@
 		delete: number;
 		deleteSelected: number[];
 		statusChange: { id: number; status: Task['status'] };
+		changeSprint: number[];
+		changeStatus: number[];
+		changeProject: number[];
 	}>();
 
 	function getSprintName(sprintId: number | null | undefined): string | null {
@@ -184,6 +187,18 @@
 		dispatch('deleteSelected', Array.from(selectedTasks));
 	}
 
+	function handleChangeSprint() {
+		dispatch('changeSprint', Array.from(selectedTasks));
+	}
+
+	function handleChangeStatus() {
+		dispatch('changeStatus', Array.from(selectedTasks));
+	}
+
+	function handleChangeProject() {
+		dispatch('changeProject', Array.from(selectedTasks));
+	}
+
 	function clearSelection() {
 		selectedTasks = new Set();
 	}
@@ -220,6 +235,27 @@
 					class="px-2.5 py-1.5 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
 				>
 					ยกเลิกเลือก
+				</button>
+				<button
+					on:click={handleChangeStatus}
+					class="px-2.5 py-1.5 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5"
+				>
+					<CheckCircle2 size={14} />
+					เปลี่ยน Status
+				</button>
+				<button
+					on:click={handleChangeProject}
+					class="px-2.5 py-1.5 text-xs sm:text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center gap-1.5"
+				>
+					<Folder size={14} />
+					เปลี่ยน Project
+				</button>
+				<button
+					on:click={handleChangeSprint}
+					class="px-2.5 py-1.5 text-xs sm:text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex items-center gap-1.5"
+				>
+					<Flag size={14} />
+					เปลี่ยน Sprint
 				</button>
 				<button
 					on:click={handleDeleteSelected}
