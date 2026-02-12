@@ -34,3 +34,9 @@ wasm-*/pkg/
 *.swp
 *.swo
 *~
+
+*storybook.log
+storybook-static
+
+# Storybook example files from init
+src/stories/
