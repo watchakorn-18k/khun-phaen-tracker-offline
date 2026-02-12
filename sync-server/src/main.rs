@@ -7,7 +7,7 @@ use axum::{
 use rand::Rng;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration as StdDuration};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -19,6 +19,8 @@ type SharedState = Arc<AppState>;
 pub struct AppState {
     /// Rooms mapped by room code
     pub rooms: DashMap<String, Room>,
+    /// How long to keep an empty room before removing it
+    pub room_idle_timeout_seconds: u64,
     /// Global channel for system events (optional)
     pub system_tx: broadcast::Sender<SystemEvent>,
 }
@@ -37,6 +39,8 @@ pub struct Room {
     pub document_state: Option<String>,
     /// Last sync timestamp
     pub last_sync: chrono::DateTime<chrono::Utc>,
+    /// When the room became empty (None means room currently has peers)
+    pub empty_since: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Peer information
@@ -121,12 +125,30 @@ async fn main() {
 
     info!("🚀 Starting Khu Phaen Sync Server...");
 
+    // Keep empty rooms for a while so browser refresh can reconnect to the same room.
+    let room_idle_timeout_seconds = std::env::var("ROOM_IDLE_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0); // 0 = keep forever until server restart
+    if room_idle_timeout_seconds == 0 {
+        info!("🕒 Empty room retention: disabled (rooms kept until server restart)");
+    } else {
+        info!(
+            "🕒 Empty room retention configured: {}s",
+            room_idle_timeout_seconds
+        );
+    }
+
     // Create shared state
     let (system_tx, _) = broadcast::channel(100);
     let state = Arc::new(AppState {
         rooms: DashMap::new(),
+        room_idle_timeout_seconds,
         system_tx,
     });
+    if room_idle_timeout_seconds > 0 {
+        spawn_room_cleanup_task(state.clone());
+    }
 
     // Build router
     let app = Router::new()
@@ -197,6 +219,7 @@ async fn create_room(State(state): State<SharedState>) -> impl IntoResponse {
         peers: DashMap::new(),
         document_state: None,
         last_sync: chrono::Utc::now(),
+        empty_since: None,
     };
 
     state.rooms.insert(room_code.clone(), room);
@@ -374,8 +397,13 @@ async fn forward_room_event(
             }
         }
         RoomEvent::DocumentUpdate { from, document } => {
-            info!("📄 Document update from {}, broadcasting to peers", from);
-            Some(ServerMessage::DocumentSync { document })
+            // Don't echo the same document update back to the sender.
+            if Some(&from) == current_peer_id {
+                None
+            } else {
+                info!("📄 Document update from {}, broadcasting to peers", from);
+                Some(ServerMessage::DocumentSync { document })
+            }
         }
         RoomEvent::HostChanged { new_host_id } => {
             info!("👑 Host changed to: {}", new_host_id);
@@ -408,7 +436,13 @@ async fn handle_client_message(
             metadata,
         } => {
             // Check if room exists
-            if let Some(room) = state.rooms.get(room_code) {
+            if let Some(mut room) = state.rooms.get_mut(room_code) {
+                // Room is active again
+                if room.empty_since.is_some() {
+                    room.empty_since = None;
+                    info!("🔄 Room revived: {}", room_code);
+                }
+
                 // Subscribe to room events BEFORE adding peer
                 *room_rx = Some(room.tx.subscribe());
                 
@@ -568,7 +602,7 @@ async fn handle_client_message(
 
 /// Leave room and cleanup
 async fn leave_room(state: &SharedState, room_code: &str, peer_id: &str) {
-    if let Some(room) = state.rooms.get(room_code) {
+    if let Some(mut room) = state.rooms.get_mut(room_code) {
         room.peers.remove(peer_id);
 
         let event = RoomEvent::PeerLeft {
@@ -578,18 +612,57 @@ async fn leave_room(state: &SharedState, room_code: &str, peer_id: &str) {
 
         info!("👤 Peer left: {} from room {}", peer_id, room_code);
 
-        // If room is empty, remove it
+        // If room is empty, mark empty_since and keep it for reconnect grace period.
         if room.peers.is_empty() {
-            drop(room);
-            state.rooms.remove(room_code);
-            info!("🗑️ Room removed: {} (empty)", room_code);
+            room.empty_since = Some(chrono::Utc::now());
+            if state.room_idle_timeout_seconds == 0 {
+                info!("🕒 Room {} is empty; keeping indefinitely", room_code);
+            } else {
+                info!(
+                    "🕒 Room {} is empty; keeping for {}s before cleanup",
+                    room_code, state.room_idle_timeout_seconds
+                );
+            }
         }
     }
 }
 
+fn spawn_room_cleanup_task(state: SharedState) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(StdDuration::from_secs(60));
+
+        loop {
+            interval.tick().await;
+
+            let now = chrono::Utc::now();
+            let timeout_seconds = state.room_idle_timeout_seconds as i64;
+
+            let stale_rooms: Vec<String> = state
+                .rooms
+                .iter()
+                .filter_map(|entry| {
+                    let room = entry.value();
+                    let empty_since = room.empty_since.as_ref()?;
+                    let idle_seconds = now.signed_duration_since(empty_since.clone()).num_seconds();
+                    if idle_seconds >= timeout_seconds {
+                        Some(entry.key().clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for room_code in stale_rooms {
+                if state.rooms.remove(&room_code).is_some() {
+                    info!("🗑️ Room removed after idle timeout: {}", room_code);
+                }
+            }
+        }
+    });
+}
+
 /// Generate a 6-character room code
 fn generate_room_code() -> String {
-    use rand::Rng;
     const CHARS: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut rng = rand::thread_rng();
     let mut result = String::new();

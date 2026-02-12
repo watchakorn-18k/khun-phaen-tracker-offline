@@ -103,7 +103,6 @@ const STORAGE_KEY_ROOM = 'sync-room-code';
 const STORAGE_KEY_IS_HOST = 'sync-is-host';
 const STORAGE_KEY_PEER_ID = 'sync-peer-id';
 const STORAGE_KEY_LAST_SEEN = 'sync-last-seen';
-const AUTO_DISCONNECT_AFTER_MINUTES = 5; // ยกเลิกการเชื่อมต่ออัตโนมัติถ้าไม่ได้เข้ามา 5 นาที
 
 // Server connection state
 export const serverUrl = writable<string>('');
@@ -132,9 +131,52 @@ let ws: WebSocket | null = null;
 let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+const HOST_AUTO_SYNC_DEBOUNCE_MS = 350;
+let hostAutoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let hostAutoSyncPending = false;
+let syncInFlight = false;
 
 // Persistent peer ID
 let currentPeerId: string | null = null;
+
+interface SyncDocumentOptions {
+    silent?: boolean;
+    source?: 'manual' | 'auto';
+}
+
+function canHostAutoSyncNow(): boolean {
+    return (
+        get(serverStatus) === 'connected' &&
+        get(isServerHost) &&
+        Boolean(get(serverRoomCode))
+    );
+}
+
+function clearHostAutoSyncState() {
+    if (hostAutoSyncTimer) {
+        clearTimeout(hostAutoSyncTimer);
+        hostAutoSyncTimer = null;
+    }
+    hostAutoSyncPending = false;
+    syncInFlight = false;
+}
+
+// Queue host sync after local changes. Debounced to prevent spam when many edits happen quickly.
+export function scheduleHostRealtimeSync(
+    reason: string = 'local-change',
+    debounceMs: number = HOST_AUTO_SYNC_DEBOUNCE_MS
+): boolean {
+    if (!canHostAutoSyncNow()) return false;
+
+    if (hostAutoSyncTimer) clearTimeout(hostAutoSyncTimer);
+    hostAutoSyncTimer = setTimeout(() => {
+        hostAutoSyncTimer = null;
+        console.log(`⚡ Host realtime sync triggered (${reason})`);
+        void syncDocumentToServer({ silent: true, source: 'auto' });
+    }, debounceMs);
+
+    return true;
+}
 
 // Save connection settings to localStorage
 function saveConnectionSettings(url: string, roomCode: string, isHost: boolean, peerId: string) {
@@ -159,26 +201,10 @@ function updateLastSeen() {
     }
 }
 
-// Check if should auto-reconnect based on last seen time
+// Keep saved room session until user explicitly disconnects.
+// Refresh / reopen should auto-reconnect regardless of how long the tab was closed.
 function shouldAutoReconnect(): boolean {
-    try {
-        const lastSeen = localStorage.getItem(STORAGE_KEY_LAST_SEEN);
-        if (!lastSeen) return true; // No last seen, allow reconnect
-        
-        const lastSeenTime = parseInt(lastSeen, 10);
-        const now = Date.now();
-        const diffMinutes = (now - lastSeenTime) / (1000 * 60);
-        
-        if (diffMinutes > AUTO_DISCONNECT_AFTER_MINUTES) {
-            console.log(`⏰ Last seen ${diffMinutes.toFixed(1)} minutes ago, clearing saved connection`);
-            clearConnectionSettings();
-            return false;
-        }
-        return true;
-    } catch (e) {
-        console.error('Failed to check last seen:', e);
-        return true;
-    }
+    return true;
 }
 
 // Clear connection settings (keep URL for reuse)
@@ -220,12 +246,8 @@ export function loadSavedConnection(): { url: string; roomCode: string; isHost: 
 
 // Auto-reconnect with saved settings
 export async function autoReconnect(): Promise<boolean> {
-    // Check if we should auto-reconnect based on last seen time
-    if (!shouldAutoReconnect()) {
-        console.log('⏰ Auto-reconnect skipped: away too long (>5 minutes)');
-        return false;
-    }
-    
+    if (!shouldAutoReconnect()) return false;
+
     const saved = loadSavedConnection();
     if (!saved) {
         console.log('ℹ️ No saved connection found');
@@ -350,6 +372,7 @@ function connectToServer(url: string) {
             console.log('🔌 Disconnected from server');
             serverStatus.set('disconnected');
             stopPing();
+            clearHostAutoSyncState();
             scheduleReconnect(url);
         };
 
@@ -545,6 +568,7 @@ export function leaveServerRoom() {
     syncMessage.set('ออกจากห้องแล้ว');
     
     stopPing();
+    clearHostAutoSyncState();
     stopHealthCheckPing();
     if (reconnectInterval) {
         clearInterval(reconnectInterval);
@@ -553,29 +577,50 @@ export function leaveServerRoom() {
 }
 
 // Sync document to server (all peers can sync)
-export async function syncDocumentToServer() {
+export async function syncDocumentToServer(options: SyncDocumentOptions = {}) {
+    const { silent = false, source = 'manual' } = options;
+
     if (!get(serverRoomCode)) {
-        syncMessage.set('ไม่ได้เชื่อมต่อห้อง');
-        setTimeout(() => syncMessage.set(''), 2000);
+        if (!silent) {
+            syncMessage.set('ไม่ได้เชื่อมต่อห้อง');
+            setTimeout(() => syncMessage.set(''), 2000);
+        }
         return;
     }
     
     if (!onSyncRequest) {
         console.error('❌ No sync callback registered');
-        syncMessage.set('ไม่ได้ตั้งค่า callback');
-        setTimeout(() => syncMessage.set(''), 2000);
+        if (!silent) {
+            syncMessage.set('ไม่ได้ตั้งค่า callback');
+            setTimeout(() => syncMessage.set(''), 2000);
+        }
+        return;
+    }
+
+    if (syncInFlight) {
+        if (source === 'auto') {
+            hostAutoSyncPending = true;
+        } else if (!silent) {
+            syncMessage.set('กำลังส่งข้อมูล...');
+            setTimeout(() => syncMessage.set(''), 1200);
+        }
         return;
     }
     
-    syncMessage.set('กำลังส่งข้อมูล...');
+    syncInFlight = true;
+    if (!silent) {
+        syncMessage.set('กำลังส่งข้อมูล...');
+    }
     
     try {
         // Get data from callback (async)
         const documentData = await onSyncRequest();
         
         if (!documentData) {
-            syncMessage.set('ไม่มีข้อมูลให้ sync');
-            setTimeout(() => syncMessage.set(''), 2000);
+            if (!silent) {
+                syncMessage.set('ไม่มีข้อมูลให้ sync');
+                setTimeout(() => syncMessage.set(''), 2000);
+            }
             return;
         }
         
@@ -586,12 +631,23 @@ export async function syncDocumentToServer() {
             document: documentData
         });
         
-        syncMessage.set('ส่งข้อมูลสำเร็จ');
+        if (!silent) {
+            syncMessage.set('ส่งข้อมูลสำเร็จ');
+            setTimeout(() => syncMessage.set(''), 2000);
+        }
         lastServerSync.set(new Date());
-        setTimeout(() => syncMessage.set(''), 2000);
     } catch (error) {
         console.error('❌ Sync failed:', error);
-        syncMessage.set('Sync ล้มเหลว');
+        if (!silent) {
+            syncMessage.set('Sync ล้มเหลว');
+        }
+    } finally {
+        syncInFlight = false;
+        if (hostAutoSyncPending) {
+            hostAutoSyncPending = false;
+            // Flush one final update that happened while previous sync was in-flight.
+            scheduleHostRealtimeSync('flush-pending');
+        }
     }
 }
 

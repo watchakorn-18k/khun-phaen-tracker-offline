@@ -73,6 +73,7 @@
     let joinRoomCode = '';
     let peerName = '';
     let copied = false;
+    let copiedRoomCode = false;
     let error: string | null = null;
     let isEditingUrl = false;
     let editedUrl = '';
@@ -209,6 +210,14 @@
         navigator.clipboard.writeText(shareUrl);
         copied = true;
         setTimeout(() => copied = false, 2000);
+    }
+
+    function copyRoomCode() {
+        const code = $serverRoomCode?.trim();
+        if (!code) return;
+        navigator.clipboard.writeText(code);
+        copiedRoomCode = true;
+        setTimeout(() => copiedRoomCode = false, 2000);
     }
     
     function getStatusIcon() {
@@ -457,6 +466,13 @@
                                 {$serverRoomCode}
                             </code>
                             <button
+                                on:click={copyRoomCode}
+                                class="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-lg transition-colors"
+                                title="คัดลอกรหัสห้อง"
+                            >
+                                <Copy size={20} />
+                            </button>
+                            <button
                                 on:click={copyShareLink}
                                 class="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-lg transition-colors"
                                 title="คัดลอกลิงก์แชร์"
@@ -465,7 +481,9 @@
                             </button>
                         </div>
                         
-                        {#if copied}
+                        {#if copiedRoomCode}
+                            <p class="text-xs text-green-600 mt-1 text-center">คัดลอกรหัสห้องแล้ว!</p>
+                        {:else if copied}
                             <p class="text-xs text-green-600 mt-1 text-center">คัดลอกลิงก์แล้ว!</p>
                         {/if}
                     </div>

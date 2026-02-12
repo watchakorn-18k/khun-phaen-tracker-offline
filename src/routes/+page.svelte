@@ -14,7 +14,7 @@
 	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles, Settings2, Flag, FileText, FileSpreadsheet, Image as ImageIcon, Video, Presentation } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
-	import { enableAutoImport, setMergeCallback } from '$lib/stores/server-sync';
+	import { enableAutoImport, setMergeCallback, scheduleHostRealtimeSync } from '$lib/stores/server-sync';
 	import { Zap } from 'lucide-svelte';
 	import ServerSyncPanel from '$lib/components/ServerSyncPanel.svelte';
 	import { tabSettings, type TabId } from '$lib/stores/tabSettings';
@@ -312,6 +312,7 @@
 			await addAssigneeDB({ name: event.detail.name, color: event.detail.color });
 			await loadData();
 			showMessage('เพิ่มผู้รับผิดชอบสำเร็จ');
+			queueHostRealtimeSync('add-worker');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการเพิ่มผู้รับผิดชอบ', 'error');
 		}
@@ -322,6 +323,7 @@
 			await updateAssignee(event.detail.id, { name: event.detail.name, color: event.detail.color });
 			await loadData();
 			showMessage('แก้ไขผู้รับผิดชอบสำเร็จ');
+			queueHostRealtimeSync('update-worker');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการแก้ไข', 'error');
 		}
@@ -332,6 +334,7 @@
 			await deleteAssignee(event.detail);
 			await loadData();
 			showMessage('ลบผู้รับผิดชอบสำเร็จ');
+			queueHostRealtimeSync('delete-worker');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการลบ', 'error');
 		}
@@ -343,6 +346,7 @@
 			await addProject({ name: event.detail.name });
 			await loadData();
 			showMessage('เพิ่มโปรเจคสำเร็จ');
+			queueHostRealtimeSync('add-project');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการเพิ่มโปรเจค', 'error');
 		}
@@ -353,6 +357,7 @@
 			await updateProject(event.detail.id, { name: event.detail.name });
 			await loadData();
 			showMessage('แก้ไขโปรเจคสำเร็จ');
+			queueHostRealtimeSync('update-project');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการแก้ไขโปรเจค', 'error');
 		}
@@ -363,6 +368,7 @@
 			await deleteProject(event.detail);
 			await loadData();
 			showMessage('ลบโปรเจคสำเร็จ');
+			queueHostRealtimeSync('delete-project');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการลบโปรเจค', 'error');
 		}
@@ -372,6 +378,13 @@
 		message = msg;
 		messageType = type;
 		setTimeout(() => message = '', 3000);
+	}
+
+	function queueHostRealtimeSync(reason: string) {
+		const queued = scheduleHostRealtimeSync(reason);
+		if (queued) {
+			console.log(`⚡ Queued host realtime sync: ${reason}`);
+		}
 	}
 
 	function formatElapsedTime(ms: number): string {
@@ -422,6 +435,7 @@
 			
 			await loadData();
 			showMessage(`จบ Sprint สำเร็จ: Archive ${archivedCount} งาน, นำ ${incompleteTasks.length} งานที่ไม่เสร็จออกจาก Sprint`);
+			queueHostRealtimeSync('complete-sprint');
 			return true;
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการจบ Sprint', 'error');
@@ -448,6 +462,7 @@
 			} else {
 				showMessage(`ย้าย ${movedCount} งานเข้า Sprint ใหม่แล้ว`);
 			}
+			queueHostRealtimeSync('move-tasks-to-sprint');
 		} catch (e) {
 			await loadData();
 			showMessage('เกิดข้อผิดพลาดในการย้ายงาน', 'error');
@@ -478,6 +493,7 @@
 	
 	async function handleAddTask(event: CustomEvent<Omit<Task, 'id' | 'created_at'>>) {
 		try {
+			const isEditing = Boolean(editingTask);
 			if (editingTask) {
 				await updateTask(editingTask.id!, event.detail);
 				showMessage('แก้ไขงานสำเร็จ');
@@ -488,6 +504,7 @@
 			}
 			await loadData();
 			showForm = false;
+			queueHostRealtimeSync(isEditing ? 'update-task' : 'add-task');
 		} catch (e) {
 			console.error('❌ handleAddTask failed:', e);
 			showMessage(`เกิดข้อผิดพลาด: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
@@ -499,6 +516,7 @@
 			await addAssigneeDB({ name: event.detail.name, color: event.detail.color });
 			assignees = await getAssignees();
 			showMessage('เพิ่มผู้รับผิดชอบสำเร็จ');
+			queueHostRealtimeSync('add-assignee');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการเพิ่มผู้รับผิดชอบ', 'error');
 		}
@@ -511,6 +529,7 @@
 			await deleteTask(id);
 			await loadData();
 			showMessage('ลบงานสำเร็จ');
+			queueHostRealtimeSync('delete-task');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -532,6 +551,9 @@
 				showMessage(`ลบงานสำเร็จ ${deletedCount} รายการ`);
 			} else {
 				showMessage(`ลบสำเร็จ ${deletedCount} รายการ, ล้มเหลว ${failedCount} รายการ`, 'error');
+			}
+			if (deletedCount > 0) {
+				queueHostRealtimeSync('delete-selected-tasks');
 			}
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาดในการลบหลายรายการ', 'error');
@@ -559,6 +581,7 @@
 		try {
 			await updateTask(event.detail.id, { status: event.detail.status });
 			await loadData();
+			queueHostRealtimeSync('update-task-status');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -2402,6 +2425,7 @@
 			
 			const actualAdded = afterStats.total - beforeStats.total;
 			showMessage(`นำเข้าสำเร็จ ${result.tasks} งาน (เพิ่มใหม่ ${actualAdded} งาน), ${result.projects} โปรเจค, ${result.assignees} ผู้รับผิดชอบ, ${result.sprints} sprint`);
+			queueHostRealtimeSync('import-csv');
 		} catch (e) {
 			console.error('❌ Import error:', e);
 			showMessage('เกิดข้อผิดพลาดในการนำเข้า: ' + (e instanceof Error ? e.message : 'Unknown error'), 'error');
