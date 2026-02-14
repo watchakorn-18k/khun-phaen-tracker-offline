@@ -393,6 +393,7 @@ function createTables() {
 			is_archived INTEGER DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			end_date TEXT DEFAULT NULL,
 			FOREIGN KEY (assignee_id) REFERENCES assignees(id)
 		)
 	`);
@@ -423,6 +424,12 @@ function createTables() {
     runSql(
       `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
     );
+  } catch (e) {
+    // Column already exists
+  }
+  // Try to add end_date column
+  try {
+    runSql(`ALTER TABLE tasks ADD COLUMN end_date TEXT DEFAULT NULL`);
   } catch (e) {
     // Column already exists
   }
@@ -486,13 +493,14 @@ export async function addTask(
   if (!db) throw new Error("DB not initialized");
 
   runSql(
-    `INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (title, project, duration_minutes, date, end_date, status, category, notes, assignee_id, sprint_id, is_archived)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.title,
       task.project || "",
       task.duration_minutes,
       task.date,
+      task.end_date || null,
       task.status,
       task.category || "อื่นๆ",
       task.notes || "",
@@ -551,6 +559,10 @@ export async function updateTask(
   if (updates.date !== undefined) {
     sets.push("date = ?");
     values.push(updates.date);
+  }
+  if (updates.end_date !== undefined) {
+    sets.push("end_date = ?");
+    values.push(updates.end_date || null);
   }
   if (updates.status !== undefined) {
     sets.push("status = ?");
@@ -730,6 +742,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
       project: obj.project as string,
       duration_minutes: obj.duration_minutes as number,
       date: obj.date as string,
+      end_date: obj.end_date as string | undefined,
       status: obj.status as Task["status"],
       category: obj.category as string,
       notes: obj.notes as string,
@@ -779,6 +792,7 @@ export async function getTaskById(id: number): Promise<Task | null> {
     project: obj.project as string,
     duration_minutes: obj.duration_minutes as number,
     date: obj.date as string,
+    end_date: obj.end_date as string | undefined,
     status: obj.status as Task["status"],
     category: obj.category as string,
     notes: obj.notes as string,
@@ -1537,6 +1551,7 @@ export async function exportAllData(): Promise<string> {
     "is_archived",
     "created_at",
     "updated_at",
+    "end_date",
   ];
   const csvRows: string[] = [];
 
@@ -1986,8 +2001,8 @@ export async function importAllData(
           // Use REPLACE for sync with existing IDs
           runSql(
             `
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               rowId,
@@ -2002,14 +2017,15 @@ export async function importAllData(
               sprintId,
               isArchived,
               row.created_at || new Date().toISOString(),
+              row.end_date || null,
             ],
           );
         } else {
           // Always INSERT as new task (ignore ID from file)
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -2022,6 +2038,7 @@ export async function importAllData(
               assigneeId,
               sprintId,
               isArchived,
+              row.end_date || null,
             ],
           );
         }
@@ -2377,8 +2394,8 @@ export async function mergeAllData(csvContent: string): Promise<{
         try {
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -2389,7 +2406,10 @@ export async function mergeAllData(csvContent: string): Promise<{
               row.category || "อื่นๆ",
               row.notes || "",
               assigneeId,
+              row.sprint_id || null,
+              row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
               row.created_at || new Date().toISOString(),
+              row.end_date || null,
             ],
           );
           tasksAdded++;
@@ -2405,7 +2425,8 @@ export async function mergeAllData(csvContent: string): Promise<{
           (row.sprint_id ? parseInt(row.sprint_id) : null) !==
             existing.sprint_id ||
           (row.is_archived === "1" || row.is_archived === "true") !==
-            (existing.is_archived === 1);
+            (existing.is_archived === 1) ||
+          (row.end_date || null) !== (existing.end_date || null);
 
         const serverDate = new Date(row.created_at || 0).getTime();
         const localDate = new Date(existing.created_at || 0).getTime();
@@ -2417,7 +2438,7 @@ export async function mergeAllData(csvContent: string): Promise<{
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
-							    assignee_id = ?, sprint_id = ?, is_archived = ?, created_at = ?
+							    assignee_id = ?, sprint_id = ?, is_archived = ?, created_at = ?, end_date = ?
 							WHERE id = ?
 						`,
               [
@@ -2432,6 +2453,7 @@ export async function mergeAllData(csvContent: string): Promise<{
                 row.sprint_id ? parseInt(row.sprint_id) : null,
                 row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
                 row.created_at || new Date().toISOString(),
+                row.end_date || null,
                 serverId,
               ],
             );

@@ -26,6 +26,7 @@
 	let title = editingTask?.title || '';
 	let project = editingTask?.project || '';
 	let date = editingTask?.date || new Date().toISOString().split('T')[0];
+	let end_date = editingTask?.end_date || '';
 	let status: Task['status'] = editingTask?.status || 'todo';
 	let category = editingTask?.category || 'งานหลัก';
 	let notes = editingTask?.notes || '';
@@ -307,6 +308,7 @@
 			title = editingTask.title || '';
 			project = editingTask.project || '';
 			date = editingTask.date || new Date().toISOString().split('T')[0];
+			end_date = editingTask.end_date || '';
 			status = editingTask.status || 'todo';
 			category = editingTask.category || 'งานหลัก';
 			notes = editingTask.notes || '';
@@ -317,6 +319,7 @@
 			title = '';
 			project = $taskDefaults.project || '';
 			date = new Date().toISOString().split('T')[0];
+			end_date = '';
 			status = 'todo';
 			category = $taskDefaults.category || 'งานหลัก';
 			notes = '';
@@ -362,6 +365,7 @@
 			project: project.trim(),
 			duration_minutes: 0,
 			date,
+			end_date: end_date || undefined,
 			status,
 			category,
 			notes: notes.trim(),
@@ -432,10 +436,11 @@
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
-		class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+		class="fixed inset-0 bg-black/50 z-50 overflow-y-auto"
 		on:click|self={handleClose}
 	>
-		<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-modal-in">
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full animate-modal-in relative">
 			<!-- Header -->
 			<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<h2 class="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
@@ -479,20 +484,35 @@
 					/>
 				</div>
 
-				<div>
-					<label for="project" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-						<Folder size={14} />
-						{$_('taskForm__project_label')}
-					</label>
-					<SearchableSelect
-						id="project"
-						bind:value={project}
-						options={[
-							{ value: '', label: '-- ' + $_('taskForm__unassigned') + ' --' },
-							...projects.map(proj => ({ value: proj.name, label: proj.name }))
-						]}
-						placeholder={$_('taskForm__project_placeholder')}
-					/>
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="project" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+							<Folder size={14} />
+							{$_('taskForm__project_label')}
+						</label>
+						<SearchableSelect
+							id="project"
+							bind:value={project}
+							options={[
+								{ value: '', label: '-- ' + $_('taskForm__unassigned') + ' --' },
+								...projects.map(proj => ({ value: proj.name, label: proj.name }))
+							]}
+							placeholder={$_('taskForm__project_placeholder')}
+						/>
+					</div>
+
+					<div>
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+							<Tag size={14} />
+							{$_('taskForm__category_label')}
+						</label>
+						<SearchableSelect
+							bind:value={category}
+							options={CATEGORIES.map(cat => ({ value: cat, label: cat }))}
+							placeholder={$_('taskForm__category_placeholder')}
+							showSearch={false}
+						/>
+					</div>
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
@@ -510,14 +530,13 @@
 
 					<div>
 						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-							<Tag size={14} />
-							{$_('taskForm__category_label')}
+							<Calendar size={14} />
+							วันสิ้นสุด (Optional)
 						</label>
-						<SearchableSelect
-							bind:value={category}
-							options={CATEGORIES.map(cat => ({ value: cat, label: cat }))}
-							placeholder={$_('taskForm__category_placeholder')}
-							showSearch={false}
+						<CustomDatePicker
+							bind:value={end_date}
+							placeholder="เลือกวันสิ้นสุด..."
+							on:select={(e) => end_date = e.detail}
 						/>
 					</div>
 				</div>
@@ -660,6 +679,7 @@
 		</div>
 	</form>
 		</div>
+	</div>
 
 	{#if showBranchDialog}
 			<!-- svelte-ignore a11y-click-events-have-key-events -->

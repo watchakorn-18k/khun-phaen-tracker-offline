@@ -37,9 +37,11 @@ export interface Task {
   is_archived?: boolean;
   created_at?: string;
   updated_at?: string;
+  end_date?: string; // YYYY-MM-DD
+  dependencies?: number[];
 }
 
-export type ViewMode = "list" | "calendar" | "kanban" | "table";
+export type ViewMode = "list" | "calendar" | "kanban" | "table" | "gantt";
 
 export interface FilterOptions {
   startDate?: string;

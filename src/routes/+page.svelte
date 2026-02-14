@@ -9,11 +9,12 @@
 	import CalendarView from '$lib/components/CalendarView.svelte';
 	import KanbanBoard from '$lib/components/KanbanBoard.svelte';
 	import TableView from '$lib/components/TableView.svelte';
+	import GanttView from '$lib/components/GanttView.svelte';
 	import StatsPanel from '$lib/components/StatsPanel.svelte';
 	import ExportImport from '$lib/components/ExportImport.svelte';
 	import WorkerManager from '$lib/components/WorkerManager.svelte';
 	import ProjectManager from '$lib/components/ProjectManager.svelte';
-	import { List, CalendarDays, Columns3, Table, Filter, Search, Plus, Users, Folder, Sparkles, MessageSquareQuote, Settings2, Flag, FileText, FileSpreadsheet, Image as ImageIcon, Video, Presentation, CheckCircle, Moon, Sun, Bookmark, Play } from 'lucide-svelte';
+	import { List, CalendarDays, Columns3, Table, GanttChart, Filter, Search, Plus, Users, Folder, Sparkles, MessageSquareQuote, Settings2, Flag, FileText, FileSpreadsheet, Image as ImageIcon, Video, Presentation, CheckCircle, Moon, Sun, Bookmark, Play } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
 	import { enableAutoImport, setMergeCallback, scheduleHostRealtimeSync } from '$lib/stores/server-sync';
@@ -63,7 +64,7 @@
 	function loadSavedViewMode(): ViewMode {
 		if (typeof localStorage === 'undefined') return 'list';
 		const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-		if (saved && ['list', 'calendar', 'kanban', 'table'].includes(saved)) {
+		if (saved && ['list', 'calendar', 'kanban', 'table', 'gantt'].includes(saved)) {
 			return saved as ViewMode;
 		}
 		return 'list';
@@ -1259,7 +1260,8 @@
 			'  sprint_id INTEGER,',
 			'  is_archived BOOLEAN DEFAULT FALSE,',
 			'  created_at TEXT,',
-			'  updated_at TEXT',
+			'  updated_at TEXT,',
+			'  end_date TEXT',
 			');',
 			''
 		];
@@ -1284,7 +1286,7 @@
 
 		for (const task of taskSnapshot) {
 			sql.push(
-				`INSERT INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at, updated_at) VALUES (${toPostgresValue(task.id)}, ${toPostgresValue(task.title)}, ${toPostgresValue(task.project)}, ${toPostgresValue(task.duration_minutes)}, ${toPostgresValue(task.date)}, ${toPostgresValue(task.status)}, ${toPostgresValue(task.category)}, ${toPostgresValue(task.notes)}, ${toPostgresValue(task.assignee_id)}, ${toPostgresValue(task.sprint_id)}, ${toPostgresValue(!!task.is_archived)}, ${toPostgresValue(task.created_at)}, ${toPostgresValue(task.updated_at)}) ON CONFLICT (id) DO NOTHING;`
+				`INSERT INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at, updated_at, end_date) VALUES (${toPostgresValue(task.id)}, ${toPostgresValue(task.title)}, ${toPostgresValue(task.project)}, ${toPostgresValue(task.duration_minutes)}, ${toPostgresValue(task.date)}, ${toPostgresValue(task.status)}, ${toPostgresValue(task.category)}, ${toPostgresValue(task.notes)}, ${toPostgresValue(task.assignee_id)}, ${toPostgresValue(task.sprint_id)}, ${toPostgresValue(!!task.is_archived)}, ${toPostgresValue(task.created_at)}, ${toPostgresValue(task.updated_at)}, ${toPostgresValue(task.end_date)}) ON CONFLICT (id) DO NOTHING;`
 			);
 		}
 
@@ -2413,6 +2415,7 @@
 				assignee: task.assignee?.name || '',
 				status: task.status,
 				date: normalizeTaskDate(task.date),
+				end_date: normalizeTaskDate(task.end_date),
 				duration_minutes: task.duration_minutes || 0,
 				is_archived: task.is_archived ? 1 : 0
 			}));
@@ -3245,8 +3248,10 @@
 						<Columns3 size={16} />
 					{:else if tab.icon === 'Table'}
 						<Table size={16} />
+					{:else if tab.icon === 'GanttChart'}
+						<GanttChart size={16} />
 					{/if}
-					<span class="hidden sm:inline">{tab.label}</span>
+					<span class="hidden sm:inline">{$_(`tabs__${tab.id}`)}</span>
 				</button>
 			{/each}
 		</div>
@@ -3437,6 +3442,12 @@
 				on:deleteSelected={handleDeleteSelectedTasks}
 				on:statusChange={handleStatusChange}
 				on:exportQR={handleExportQR}
+			/>
+		{:else if currentView === 'gantt'}
+			<GanttView
+				tasks={filteredTasks}
+				sprints={$sprints}
+				on:edit={handleEditTask}
 			/>
 		{/if}
 	</div>
@@ -3744,28 +3755,28 @@
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">1</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[0]?.label || $_('shortcuts__list_view_label')}</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[0] ? $_(`tabs__${$tabSettings[0].id}`) : $_('shortcuts__list_view_label')}</span>
 							</div>
 							<span class="text-xs text-gray-400">list view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">2</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[1]?.label || $_('shortcuts__calendar_view_label')}</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[1] ? $_(`tabs__${$tabSettings[1].id}`) : $_('shortcuts__calendar_view_label')}</span>
 							</div>
 							<span class="text-xs text-gray-400">calendar view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">3</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[2]?.label || $_('shortcuts__kanban_view_label')}</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[2] ? $_(`tabs__${$tabSettings[2].id}`) : $_('shortcuts__kanban_view_label')}</span>
 							</div>
 							<span class="text-xs text-gray-400">kanban view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">4</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[3]?.label || $_('shortcuts__table_view_label')}</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[3] ? $_(`tabs__${$tabSettings[3].id}`) : $_('shortcuts__table_view_label')}</span>
 							</div>
 							<span class="text-xs text-gray-400">table view</span>
 						</div>

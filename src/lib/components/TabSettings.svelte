@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { tabSettings, type TabConfig, type TabId } from '$lib/stores/tabSettings';
 	import { List, CalendarDays, Columns3, Table, GripVertical, ChevronUp, ChevronDown, RotateCcw, X, Check, Settings2 } from 'lucide-svelte';
+	import { _ } from 'svelte-i18n';
 	import { flip } from 'svelte/animate';
 	import { quintOut } from 'svelte/easing';
 
@@ -109,10 +110,11 @@
 
 	function handleReset() {
 		editingTabs = [
-			{ id: 'list', label: 'รายการ', icon: 'List' },
-			{ id: 'calendar', label: 'ปฏิทิน', icon: 'CalendarDays' },
-			{ id: 'kanban', label: 'Kanban', icon: 'Columns3' },
-			{ id: 'table', label: 'ตาราง', icon: 'Table' }
+			{ id: 'list', label: 'list', icon: 'List' },
+			{ id: 'calendar', label: 'calendar', icon: 'CalendarDays' },
+			{ id: 'kanban', label: 'kanban', icon: 'Columns3' },
+			{ id: 'table', label: 'table', icon: 'Table' },
+			{ id: 'gantt', label: 'gantt', icon: 'GanttChart' }
 		];
 		hasChanges = true;
 	}
@@ -136,7 +138,7 @@
 	<div class="flex items-center justify-between mb-4">
 		<h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
 			<Settings2 size={18} />
-			จัดการแท็บ
+			{$_('tabSettings__title')}
 		</h3>
 		<button
 			on:click={handleCancel}
@@ -147,7 +149,10 @@
 	</div>
 
 	<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-		ลาก <GripVertical size={14} class="inline" /> เพื่อจัดเรียงลำดับแท็บ
+        <!-- Hack to replace <icon /> since simple-i18n doesn't support components in strings easily -->
+		<span>{$_('tabSettings__subtitle').split('<icon />')[0]}</span>
+        <GripVertical size={14} class="inline" />
+        <span>{$_('tabSettings__subtitle').split('<icon />')[1]}</span>
 	</p>
 
 	<div class="space-y-2 mb-4">
@@ -176,7 +181,7 @@
 				<svelte:component this={getIcon(tab.icon)} size={18} class="text-gray-600 dark:text-gray-300" />
 				
 				<span class="flex-1 font-medium text-gray-700 dark:text-gray-200">
-					{tab.label}
+					{$_(`tabs__${tab.id}`)}
 				</span>
 				
 				<div class="flex items-center gap-1">
@@ -184,7 +189,7 @@
 						on:click={() => moveUp(index)}
 						disabled={index === 0}
 						class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 active:scale-95"
-						title="ขึ้น"
+						title={$_('tabSettings__move_up')}
 					>
 						<ChevronUp size={16} />
 					</button>
@@ -192,7 +197,7 @@
 						on:click={() => moveDown(index)}
 						disabled={index === editingTabs.length - 1}
 						class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 active:scale-95"
-						title="ลง"
+						title={$_('tabSettings__move_down')}
 					>
 						<ChevronDown size={16} />
 					</button>
@@ -207,7 +212,7 @@
 			class="px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95"
 		>
 			<RotateCcw size={16} />
-			รีเซ็ต
+			{$_('tabSettings__btn_reset')}
 		</button>
 		
 		<div class="flex-1"></div>
@@ -216,7 +221,7 @@
 			on:click={handleCancel}
 			class="px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all hover:scale-105 active:scale-95"
 		>
-			ยกเลิก
+			{$_('tabSettings__btn_cancel')}
 		</button>
 		
 		<button
@@ -225,7 +230,7 @@
 			class="px-3 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95"
 		>
 			<Check size={16} />
-			บันทึก
+			{$_('tabSettings__btn_save')}
 		</button>
 	</div>
 </div>
