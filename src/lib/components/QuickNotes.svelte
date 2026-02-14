@@ -3,11 +3,16 @@
 	import { FileText, X, Trash2, Copy, Check } from 'lucide-svelte';
 	import { quickNotes } from '$lib/stores/quickNotes';
 	import { _ } from 'svelte-i18n';
+	import { Tipex } from '@friendofsvelte/tipex';
+	import '@friendofsvelte/tipex/styles/index.css';
 
 	const dispatch = createEventDispatcher<{ close: void }>();
 
 	let copied = false;
-	let textareaRef: HTMLTextAreaElement;
+	let tipexEditor = $state();
+	
+	// We use the store content as initial body
+	let content = $state($quickNotes);
 
 	function handleClose() {
 		dispatch('close');
@@ -16,11 +21,13 @@
 	function handleClear() {
 		if (confirm($_('quickNotes__clear_confirm') || 'ต้องการล้างบันทึกทั้งหมดหรือไม่?')) {
 			quickNotes.clear();
+			content = '';
 		}
 	}
 
 	async function handleCopy() {
 		try {
+			// Get the latest content from the store
 			await navigator.clipboard.writeText($quickNotes);
 			copied = true;
 			setTimeout(() => {
@@ -37,11 +44,12 @@
 		}
 	}
 
-	onMount(() => {
-		if (textareaRef) {
-			textareaRef.focus();
-		}
-	});
+	const handleUpdate = (e: any) => {
+		// Tiptap can export to HTML. Usually for Markdown we need an extension.
+		// For now let's store the HTML/Text in the store.
+		const html = e.editor.getHTML();
+		quickNotes.set(html);
+	};
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -51,7 +59,7 @@
 	on:click|self={handleClose}
 >
 	<div 
-		class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full h-[70vh] flex flex-col animate-modal-in"
+		class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full h-[85vh] flex flex-col animate-modal-in overflow-hidden"
 		on:keydown={handleKeydown}
 	>
 		<!-- Header -->
@@ -103,17 +111,25 @@
 		</div>
 
 		<!-- Content -->
-		<div class="flex-1 p-5 relative">
-			<textarea
-				bind:this={textareaRef}
-				class="w-full h-full resize-none bg-transparent text-gray-700 dark:text-gray-200 placeholder-gray-400 focus:outline-none font-sans leading-relaxed"
-				placeholder={$_('quickNotes__placeholder') || 'พิมพ์บันทึกของคุณที่นี่...'}
-				bind:value={$quickNotes}
-			></textarea>
-			
-			<!-- Bottom Status -->
-			<div class="absolute bottom-2 right-5 text-[10px] text-gray-400 pointer-events-none">
-				{$quickNotes.length} {$_('quickNotes__characters') || 'ตัวอักษร'} | Auto-saved
+		<div class="flex-1 overflow-y-auto p-4 tipex-container prose dark:prose-invert max-w-none">
+			<Tipex 
+				body={content} 
+				onupdate={handleUpdate}
+				bind:tipex={tipexEditor}
+				floating={true} 
+				focal={true}
+				class="h-full border-none outline-none"
+			/>
+		</div>
+
+		<!-- Footer -->
+		<div class="px-5 py-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+			<div class="flex items-center gap-2">
+				<span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+				<span class="text-[10px] text-gray-400 uppercase tracking-widest font-medium">Auto-saved</span>
+			</div>
+			<div class="text-[10px] text-gray-400">
+				{$quickNotes.length} {$_('quickNotes__characters') || 'ตัวอักษร'} | Notion-style Editor
 			</div>
 		</div>
 	</div>
@@ -135,8 +151,18 @@
 		animation: modal-in 0.2s ease-out;
 	}
 
-	textarea {
-		scrollbar-width: thin;
-		scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+	:global(.tipex-container .tipex) {
+		background: transparent !important;
+		border: none !important;
+	}
+
+	:global(.tipex-container .tipex-editor) {
+		padding: 1rem !important;
+		min-height: 40vh;
+	}
+
+	/* Fix styling for dark mode */
+	:global(.dark .tipex-editor) {
+		color: #e2e8f0;
 	}
 </style>
