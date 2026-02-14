@@ -69,6 +69,7 @@
 		"qrcode": "^1.5.4",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
+		"spotlight-omni-search": "^3.1.0",
 		"svelte-dnd-action": "^0.9.69",
 		"svelte-i18n": "^4.0.1",
 		"tailwindcss": "^4.1.18",

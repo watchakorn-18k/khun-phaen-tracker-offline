@@ -129,7 +129,7 @@ async fn main() {
     dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    info!("🚀 Starting Khu Phaen Sync Server...");
+    info!("🚀 Starting Khun Phaen Sync Server...");
 
     let room_idle_timeout_seconds = std::env::var("ROOM_IDLE_TIMEOUT_SECONDS")
         .ok()
@@ -229,7 +229,7 @@ async fn shutdown_signal(tx: broadcast::Sender<SystemEvent>) {
 
 async fn root_handler() -> impl IntoResponse {
     axum::Json(serde_json::json!({
-        "name": "Khu Phaen Sync Server",
+        "name": "Khun Phaen Sync Server",
         "version": "0.1.0",
         "status": "running",
         "websocket": "/ws",

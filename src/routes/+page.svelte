@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { _ } from 'svelte-i18n';
 	import type { Task, Project, Assignee, ViewMode, FilterOptions } from '$lib/types';
 	import { getTasks, getTasksBySprint, addTask, updateTask, deleteTask, getStats, exportToCSV, importFromCSV, importAllData, mergeAllData, getCategories, getAssignees, getProjects, getProjectsList, addProject, updateProject, deleteProject, getProjectStats, addAssignee as addAssigneeDB, getAssigneeStats, updateAssignee, deleteAssignee, archiveTasksBySprint, exportFilteredSQLiteBinary } from '$lib/db';
@@ -88,10 +88,295 @@
 	let showQRExport = false;
 	let qrExportTasks: Task[] = [];
 	let searchInputRef: HTMLInputElement;
+	let commandInputRef: HTMLInputElement;
+	let showCommandPalette = false;
+	let commandQuery = '';
+	let commandSelectedIndex = 0;
 
 	let filters: FilterOptions = { ...DEFAULT_FILTERS };
 	let selectedSprint: Sprint | null = null;
 	// Show all sprints including completed ones in dropdown
+
+	type CommandPaletteItem = {
+		id: string;
+		label: string;
+		description: string;
+		keywords: string[];
+		run: () => void | Promise<void>;
+	};
+
+	async function startTimerFromCommandPalette() {
+		const taskToStart = tasks.find((task) => !task.is_archived && task.status === 'todo' && task.id !== undefined);
+		if (!taskToStart?.id) {
+			showMessage('No TODO task found to start timer', 'error');
+			return;
+		}
+
+		try {
+			await updateTask(taskToStart.id, { status: 'in-progress' });
+			await loadData();
+			queueHostRealtimeSync('update-task-status');
+			showMessage(`Started timer for: ${taskToStart.title}`);
+		} catch (error) {
+			console.error('Failed to start timer from command palette:', error);
+			showMessage('Failed to start timer', 'error');
+		}
+	}
+
+	function openCommandPalette() {
+		showCommandPalette = true;
+		commandQuery = '';
+		commandSelectedIndex = 0;
+		void tick().then(() => {
+			commandInputRef?.focus();
+		});
+	}
+
+	function closeCommandPalette() {
+		showCommandPalette = false;
+		commandQuery = '';
+		commandSelectedIndex = 0;
+	}
+
+	function normalizeForCommandSearch(value: string): string {
+		return value
+			.toLowerCase()
+			.replace(/[^a-z0-9\u0E00-\u0E7F\s]/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
+	}
+
+	function getFuzzyScore(query: string, haystack: string): number | null {
+		if (!query) return 0;
+		if (!haystack) return null;
+
+		if (haystack.includes(query)) {
+			const index = haystack.indexOf(query);
+			return 1200 - index * 3 - Math.abs(haystack.length - query.length);
+		}
+
+		let queryIndex = 0;
+		let score = 0;
+		let streak = 0;
+
+		for (let i = 0; i < haystack.length && queryIndex < query.length; i++) {
+			if (haystack[i] === query[queryIndex]) {
+				score += streak > 0 ? 14 : 7;
+				if (i === 0 || haystack[i - 1] === ' ') {
+					score += 4;
+				}
+				streak += 1;
+				queryIndex += 1;
+			} else {
+				streak = 0;
+			}
+		}
+
+		if (queryIndex !== query.length) return null;
+		return score - Math.max(0, haystack.length - query.length) * 0.2;
+	}
+
+	function applyGlobalTaskSearch(queryText: string) {
+		searchInput = queryText;
+		searchQuery.set(queryText);
+
+		if ($wasmReady) {
+			filteredTasks = performSearch(queryText, tasks);
+		} else {
+			filters.search = queryText;
+			void loadData();
+		}
+	}
+
+	$: baseCommandPaletteItems = [
+		{
+			id: 'create-task',
+			label: $_('commandPalette__create_task_label'),
+			description: $_('commandPalette__create_task_desc'),
+			keywords: ['new task', 'add task', 'create task'],
+			run: () => {
+				showForm = true;
+				editingTask = null;
+			}
+		},
+		{
+			id: 'start-timer',
+			label: $_('commandPalette__start_timer_label'),
+			description: $_('commandPalette__start_timer_desc'),
+			keywords: ['timer', 'start timer', 'in progress', 'focus'],
+			run: () => startTimerFromCommandPalette()
+		},
+		{
+			id: 'toggle-dark-mode',
+			label: $_('commandPalette__toggle_theme_label'),
+			description: $_('commandPalette__toggle_theme_desc'),
+			keywords: ['theme', 'dark mode', 'light mode'],
+			run: () => theme.toggle()
+		}
+	];
+
+	$: sprintCommandPaletteItems = $sprints
+		.filter((sprint) => sprint.id !== undefined)
+		.map((sprint, index) => ({
+			id: `go-to-sprint-${sprint.id}`,
+			label: $_('commandPalette__go_to_sprint_label', { values: { name: sprint.name } }),
+			description: $_('commandPalette__go_to_sprint_desc', { values: { name: sprint.name } }),
+			keywords: [
+				'go to sprint',
+				`sprint ${index + 1}`,
+				`go to sprint ${index + 1}`,
+				sprint.name.toLowerCase()
+			],
+			run: () => {
+				filters = { ...filters, sprint_id: sprint.id ?? 'all' };
+				applyFilters();
+			}
+		}));
+
+	$: normalizedCommandQuery = normalizeForCommandSearch(commandQuery.trim());
+
+	$: dynamicCommandPaletteItems = (() => {
+		if (!normalizedCommandQuery) return [] as CommandPaletteItem[];
+
+		const sprintNameById = new Map(
+			$sprints
+				.filter((sprint) => sprint.id !== undefined)
+				.map((sprint) => [sprint.id as number, sprint.name])
+		);
+
+		const taskItems = monthlySummaryTasks
+			.filter((task) => task.id !== undefined)
+			.map((task) => {
+				const sprintName = task.sprint_id ? sprintNameById.get(task.sprint_id) || '' : '';
+				const taskSearchText = normalizeForCommandSearch(
+					[
+						task.title,
+						task.project || '',
+						task.category || '',
+						task.notes || '',
+						task.assignee?.name || '',
+						sprintName,
+						task.status
+					].join(' ')
+				);
+				const score = getFuzzyScore(normalizedCommandQuery, taskSearchText);
+				if (score === null) return null;
+
+				return {
+					score,
+					item: {
+						id: `task-${task.id}`,
+						label: `Open Task: ${task.title}`,
+						description: `${task.project || 'No project'} · ${task.status}`,
+						keywords: [task.title, task.project || '', task.category || '', task.assignee?.name || '', sprintName],
+						run: () => {
+							editingTask = task;
+							showForm = true;
+						}
+					} satisfies CommandPaletteItem
+				};
+			})
+			.filter((entry): entry is { score: number; item: CommandPaletteItem } => entry !== null)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 6)
+			.map((entry) => entry.item);
+
+		const projectItems = projectList
+			.map((project) => {
+				const score = getFuzzyScore(normalizedCommandQuery, normalizeForCommandSearch(project.name));
+				if (score === null) return null;
+				return {
+					score,
+					item: {
+						id: `project-${project.id ?? project.name}`,
+						label: `Filter by Project: ${project.name}`,
+						description: 'Apply project filter',
+						keywords: [project.name, 'project', 'filter'],
+						run: () => {
+							filters = { ...filters, project: project.name };
+							applyFilters();
+						}
+					} satisfies CommandPaletteItem
+				};
+			})
+			.filter((entry): entry is { score: number; item: CommandPaletteItem } => entry !== null)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 3)
+			.map((entry) => entry.item);
+
+		const assigneeItems = assignees
+			.filter((assignee) => assignee.id !== undefined)
+			.map((assignee) => {
+				const score = getFuzzyScore(normalizedCommandQuery, normalizeForCommandSearch(assignee.name));
+				if (score === null) return null;
+				return {
+					score,
+					item: {
+						id: `assignee-${assignee.id}`,
+						label: `Filter by Assignee: ${assignee.name}`,
+						description: 'Apply assignee filter',
+						keywords: [assignee.name, 'assignee', 'worker', 'filter'],
+						run: () => {
+							filters = { ...filters, assignee_id: assignee.id ?? 'all' };
+							applyFilters();
+						}
+					} satisfies CommandPaletteItem
+				};
+			})
+			.filter((entry): entry is { score: number; item: CommandPaletteItem } => entry !== null)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 3)
+			.map((entry) => entry.item);
+
+		const quickSearchItem: CommandPaletteItem = {
+			id: `search-all-${normalizedCommandQuery}`,
+			label: `Search tasks for: ${commandQuery.trim()}`,
+			description: 'Run task search in the main search bar',
+			keywords: ['search', 'find', commandQuery.trim()],
+			run: () => applyGlobalTaskSearch(commandQuery.trim())
+		};
+
+		return [quickSearchItem, ...taskItems, ...projectItems, ...assigneeItems];
+	})();
+
+	$: commandPaletteItems = [...baseCommandPaletteItems, ...sprintCommandPaletteItems, ...dynamicCommandPaletteItems];
+
+	$: commandPaletteFilteredItems = (() => {
+		if (!normalizedCommandQuery) return commandPaletteItems;
+
+		const scored = commandPaletteItems
+			.map((item) => {
+				const haystack = normalizeForCommandSearch(`${item.label} ${item.description} ${item.keywords.join(' ')}`);
+				const score = getFuzzyScore(normalizedCommandQuery, haystack);
+				if (score === null) return null;
+				return { item, score };
+			})
+			.filter((entry): entry is { item: CommandPaletteItem; score: number } => entry !== null)
+			.sort((a, b) => b.score - a.score);
+
+		const seen = new Set<string>();
+		const deduped: CommandPaletteItem[] = [];
+		for (const entry of scored) {
+			if (seen.has(entry.item.id)) continue;
+			seen.add(entry.item.id);
+			deduped.push(entry.item);
+		}
+
+		return deduped;
+	})();
+
+	$: {
+		if (commandPaletteFilteredItems.length === 0) {
+			commandSelectedIndex = 0;
+		} else if (commandSelectedIndex >= commandPaletteFilteredItems.length) {
+			commandSelectedIndex = commandPaletteFilteredItems.length - 1;
+		}
+	}
+
+	async function runCommandPaletteItem(item: CommandPaletteItem) {
+		await item.run();
+		closeCommandPalette();
+	}
 
 	// Save view mode when it changes
 	$: saveViewMode(currentView);
@@ -110,11 +395,57 @@
 
 	// Keyboard shortcuts handler
 	function handleKeydown(event: KeyboardEvent) {
+		const isCommandPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+		if (isCommandPaletteShortcut) {
+			event.preventDefault();
+			if (showCommandPalette) {
+				closeCommandPalette();
+			} else {
+				openCommandPalette();
+			}
+			return;
+		}
+
+		if (showCommandPalette) {
+			switch (event.key) {
+				case 'Escape':
+					event.preventDefault();
+					closeCommandPalette();
+					break;
+				case 'ArrowDown':
+					event.preventDefault();
+					if (commandPaletteFilteredItems.length > 0) {
+						commandSelectedIndex = (commandSelectedIndex + 1) % commandPaletteFilteredItems.length;
+					}
+					break;
+				case 'ArrowUp':
+					event.preventDefault();
+					if (commandPaletteFilteredItems.length > 0) {
+						commandSelectedIndex = (commandSelectedIndex - 1 + commandPaletteFilteredItems.length) % commandPaletteFilteredItems.length;
+					}
+					break;
+				case 'Enter': {
+					event.preventDefault();
+					const selectedCommand = commandPaletteFilteredItems[commandSelectedIndex];
+					if (selectedCommand) {
+						void runCommandPaletteItem(selectedCommand);
+					}
+					break;
+				}
+			}
+			return;
+		}
+
 		// Ignore if user is typing in an input/textarea
 		const target = event.target as HTMLElement;
 		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
 			// Allow Escape to close modals even when in input
 			if (event.key === 'Escape') {
+				if (showCommandPalette) {
+					closeCommandPalette();
+					event.preventDefault();
+					return;
+				}
 				if (showForm) {
 					showForm = false;
 					editingTask = null;
@@ -177,6 +508,8 @@
 					showSprintManager = false;
 				} else if (showTabSettings) {
 					showTabSettings = false;
+				} else if (showCommandPalette) {
+					closeCommandPalette();
 				}
 				break;
 			case '?':
@@ -3137,21 +3470,73 @@
 	/>
 
 	<!-- Keyboard Shortcuts Modal -->
+	{#if showCommandPalette}
+		<!-- svelte-ignore a11y-click-events-have-key-events -->
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<div
+			class="fixed inset-0 bg-black/55 flex items-start justify-center z-60 p-4 pt-[12vh] backdrop-blur-sm"
+			on:click|self={closeCommandPalette}
+			role="button"
+			tabindex="0"
+			aria-label="Close command palette"
+		>
+			<div class="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 shadow-2xl overflow-hidden">
+				<div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+					<p class="text-sm font-semibold text-gray-900 dark:text-gray-100">⌨️ {$_('commandPalette__title')}</p>
+					<kbd class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300">⌘K / Ctrl+K</kbd>
+				</div>
+
+				<div class="p-4 border-b border-gray-100 dark:border-gray-800">
+					<input
+						bind:this={commandInputRef}
+						bind:value={commandQuery}
+						type="text"
+						placeholder="Try command, task title, project, assignee, sprint..."
+						class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-primary"
+					/>
+				</div>
+
+				<div class="max-h-[48vh] overflow-y-auto p-2">
+					{#if commandPaletteFilteredItems.length === 0}
+						<div class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+							No result. Try task title, project name, assignee, or sprint.
+						</div>
+					{:else}
+						{#each commandPaletteFilteredItems as item, index}
+							<button
+								on:click={() => runCommandPaletteItem(item)}
+								class="w-full text-left px-4 py-3 rounded-xl transition-colors mb-1 {index === commandSelectedIndex ? 'bg-primary/10 border border-primary/30' : 'hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'}"
+							>
+								<div class="flex items-center justify-between gap-3">
+									<div class="min-w-0">
+										<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{item.label}</p>
+										<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{item.description}</p>
+									</div>
+									<span class="text-[10px] uppercase tracking-wide text-gray-400">Enter</span>
+								</div>
+							</button>
+						{/each}
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{#if $showKeyboardShortcuts}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<div
-				class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
-				on:click|self={() => $showKeyboardShortcuts = false}
-				on:keydown={(event) => event.key === 'Escape' && ($showKeyboardShortcuts = false)}
-				role="button"
-				tabindex="0"
-				aria-label="ปิดหน้าต่างคีย์ลัด"
-			>
+		<div
+			class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+			on:click|self={() => $showKeyboardShortcuts = false}
+			on:keydown={(event) => event.key === 'Escape' && ($showKeyboardShortcuts = false)}
+			role="button"
+			tabindex="0"
+			aria-label={$_('shortcuts__close_modal')}
+		>
 			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-modal-in">
 				<div class="flex items-center justify-between mb-6">
 					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-						⌨️ คีย์ลัด (Keyboard Shortcuts)
+						⌨️ {$_('shortcuts__title')}
 					</h3>
 						<button
 							on:click={() => $showKeyboardShortcuts = false}
@@ -3164,68 +3549,68 @@
 
 				<!-- View Shortcuts -->
 				<div class="mb-4">
-					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">การมองเห็น (Views)</h4>
+					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">{$_('shortcuts__views')}</h4>
 					<div class="space-y-2">
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">1</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[0]?.label || 'รายการ'} ({$tabSettings[0]?.id || 'list'})</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[0]?.label || $_('shortcuts__list_view_label')}</span>
 							</div>
-							<span class="text-xs text-gray-400">{$tabSettings[0]?.id || 'list'} view</span>
+							<span class="text-xs text-gray-400">list view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">2</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[1]?.label || 'ปฏิทิน'} ({$tabSettings[1]?.id || 'calendar'})</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[1]?.label || $_('shortcuts__calendar_view_label')}</span>
 							</div>
-							<span class="text-xs text-gray-400">{$tabSettings[1]?.id || 'calendar'} view</span>
+							<span class="text-xs text-gray-400">calendar view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">3</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[2]?.label || 'Kanban'} ({$tabSettings[2]?.id || 'kanban'})</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[2]?.label || $_('shortcuts__kanban_view_label')}</span>
 							</div>
-							<span class="text-xs text-gray-400">{$tabSettings[2]?.id || 'kanban'} view</span>
+							<span class="text-xs text-gray-400">kanban view</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">4</kbd>
-								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[3]?.label || 'ตาราง'} ({$tabSettings[3]?.id || 'table'})</span>
+								<span class="text-gray-700 dark:text-gray-300">{$tabSettings[3]?.label || $_('shortcuts__table_view_label')}</span>
 							</div>
-							<span class="text-xs text-gray-400">{$tabSettings[3]?.id || 'table'} view</span>
+							<span class="text-xs text-gray-400">table view</span>
 						</div>
 					</div>
 				</div>
 
 				<!-- Action Shortcuts -->
 				<div class="mb-4">
-					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">การทำงาน (Actions)</h4>
+					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">{$_('shortcuts__actions')}</h4>
 					<div class="space-y-2">
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">/</kbd>
-								<span class="text-gray-700 dark:text-gray-300">โฟกัสช่องค้นหา</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__focus_search')}</span>
 							</div>
 							<span class="text-xs text-gray-400">Focus search</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">N</kbd>
-								<span class="text-gray-700 dark:text-gray-300">เพิ่มงานใหม่</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__new_task')}</span>
 							</div>
 							<span class="text-xs text-gray-400">New task</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">F</kbd>
-								<span class="text-gray-700 dark:text-gray-300">เปิด/ปิดตัวกรอง</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__toggle_filters')}</span>
 							</div>
 							<span class="text-xs text-gray-400">Toggle filters</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">T</kbd>
-								<span class="text-gray-700 dark:text-gray-300">สลับธีม สว่าง/มืด</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__toggle_theme')}</span>
 							</div>
 							<span class="text-xs text-gray-400">Toggle theme</span>
 						</div>
@@ -3234,28 +3619,35 @@
 
 				<!-- System Shortcuts -->
 				<div>
-					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">ระบบ (System)</h4>
+					<h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">{$_('shortcuts__system')}</h4>
 					<div class="space-y-2">
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">Esc</kbd>
-								<span class="text-gray-700 dark:text-gray-300">ปิด Modal / ยกเลิก</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__close_modal')}</span>
 							</div>
 							<span class="text-xs text-gray-400">Close modal</span>
 						</div>
 						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
 							<div class="flex items-center gap-3">
 								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">?</kbd>
-								<span class="text-gray-700 dark:text-gray-300">แสดงคีย์ลัดทั้งหมด</span>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__show_shortcuts')}</span>
 							</div>
 							<span class="text-xs text-gray-400">Show shortcuts</span>
+						</div>
+						<div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+							<div class="flex items-center gap-3">
+								<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono text-gray-700 dark:text-gray-300">⌘K / Ctrl+K</kbd>
+								<span class="text-gray-700 dark:text-gray-300">{$_('shortcuts__open_commands')}</span>
+							</div>
+							<span class="text-xs text-gray-400">Open commands</span>
 						</div>
 					</div>
 				</div>
 
 				<div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
 					<p class="text-xs text-gray-500 dark:text-gray-400 text-center">
-						💡 คีย์ลัดทำงานเมื่อไม่ได้อยู่ใน input หรือ textarea
+						💡 {$_('shortcuts__hint')}
 					</p>
 				</div>
 
@@ -3264,7 +3656,7 @@
 						on:click={() => $showKeyboardShortcuts = false}
 						class="w-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors"
 					>
-						เข้าใจแล้ว
+						{$_('shortcuts__btn_got_it')}
 					</button>
 				</div>
 			</div>
