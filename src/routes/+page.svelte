@@ -105,6 +105,9 @@
 		keywords: string[];
 		category: 'command' | 'search' | 'task' | 'project' | 'assignee' | 'sprint';
 		run: () => void | Promise<void>;
+		// Metadata for specialized rendering
+		project?: string;
+		status?: string;
 	};
 
 	type CommandPaletteGroup = {
@@ -151,6 +154,28 @@
 				return $_('commandPalette__cat_sprint');
 			default:
 				return $_('commandPalette__cat_command');
+		}
+	}
+
+	function getCommandStatusInfo(status: string | undefined) {
+		if (!status) return null;
+		switch (status) {
+			case 'done':
+				return {
+					label: $_('page__filter_status_done'),
+					class: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+				};
+			case 'in-progress':
+				return {
+					label: $_('page__filter_status_in_progress'),
+					class: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20'
+				};
+			case 'todo':
+			default:
+				return {
+					label: $_('page__filter_status_todo'),
+					class: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+				};
 		}
 	}
 
@@ -314,6 +339,8 @@
 					description: `${task.project || $_('commandPalette__no_project')} · ${task.status}`,
 					keywords: [task.title, task.project || '', task.category || '', task.assignee?.name || '', sprintName],
 					category: 'task',
+					project: task.project || $_('commandPalette__no_project'),
+					status: task.status,
 					run: () => {
 						editingTask = task;
 						showForm = true;
@@ -339,6 +366,7 @@
 					description: $_('commandPalette__filter_project_desc'),
 					keywords: [project.name, 'project', 'filter'],
 					category: 'project',
+					project: project.name,
 					run: () => {
 						filters = { ...filters, project: project.name };
 						applyFilters();
@@ -3606,9 +3634,29 @@
 									class="w-full text-left px-4 py-3 rounded-xl transition-colors mb-1 {itemIndex === commandSelectedIndex ? 'bg-primary/10 border border-primary/30' : 'hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'}"
 								>
 									<div class="flex items-center justify-between gap-3">
-										<div class="min-w-0">
-											<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{item.label}</p>
-											<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{item.description}</p>
+										<div class="min-w-0 flex-1">
+											<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate mb-0.5">{item.label}</p>
+											{#if item.project}
+												<div class="flex items-center gap-2 flex-wrap">
+													<div class="flex items-center gap-1.5">
+														<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20">
+															<Folder size={10} />
+															{item.project}
+														</span>
+														
+														{#if item.status}
+															{@const statusInfo = getCommandStatusInfo(item.status)}
+															{#if statusInfo}
+																<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border {statusInfo.class}">
+																	{statusInfo.label}
+																</span>
+															{/if}
+														{/if}
+													</div>
+												</div>
+											{:else}
+												<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{item.description}</p>
+											{/if}
 										</div>
 										<span class="text-[10px] uppercase tracking-wide text-gray-400">Enter</span>
 									</div>
