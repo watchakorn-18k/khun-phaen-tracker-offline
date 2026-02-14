@@ -115,3 +115,12 @@ body {
 .dark .app-surface button:not(.bg-primary):not(.bg-success):not(.bg-warning):not(.bg-danger) {
   @apply text-gray-100;
 }
+
+/* Hide tldraw license watermark */
+.tl-watermark_SEE-LICENSE,
+[data-testid="tl-watermark-unlicensed"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
