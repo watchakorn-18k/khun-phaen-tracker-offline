@@ -6,8 +6,8 @@
 	
 	const dispatch = createEventDispatcher<{
 		close: void;
-		add: { name: string; color: string };
-		update: { id: number; name: string; color: string };
+		add: { name: string; color: string; discord_id?: string };
+		update: { id: number; name: string; color: string; discord_id?: string };
 		delete: number;
 	}>();
 	
@@ -17,6 +17,7 @@
 	let showAddForm = false;
 	let editingWorker: Assignee | null = null;
 	let newWorkerName = '';
+	let newWorkerDiscordId = '';
 	let newWorkerColor = '#6366F1';
 	let deleteConfirmId: number | null = null;
 	
@@ -31,6 +32,7 @@
 		showAddForm = true;
 		editingWorker = null;
 		newWorkerName = '';
+		newWorkerDiscordId = '';
 		newWorkerColor = '#6366F1';
 	}
 	
@@ -38,6 +40,7 @@
 		editingWorker = worker;
 		showAddForm = true;
 		newWorkerName = worker.name;
+		newWorkerDiscordId = worker.discord_id || '';
 		newWorkerColor = worker.color || '#6366F1';
 	}
 	
@@ -45,6 +48,7 @@
 		showAddForm = false;
 		editingWorker = null;
 		newWorkerName = '';
+		newWorkerDiscordId = '';
 		newWorkerColor = '#6366F1';
 	}
 	
@@ -55,12 +59,14 @@
 			dispatch('update', {
 				id: editingWorker.id!,
 				name: newWorkerName.trim(),
-				color: newWorkerColor
+				color: newWorkerColor,
+				discord_id: newWorkerDiscordId.trim() || undefined
 			});
 		} else {
 			dispatch('add', {
 				name: newWorkerName.trim(),
-				color: newWorkerColor
+				color: newWorkerColor,
+				discord_id: newWorkerDiscordId.trim() || undefined
 			});
 		}
 		
@@ -131,6 +137,19 @@
 							type="text"
 							bind:value={newWorkerName}
 							placeholder={$_('workerManager__name_placeholder')}
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+						/>
+					</div>
+
+					<div>
+						<label for="worker-discord-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+							Discord ID
+						</label>
+						<input
+							id="worker-discord-input"
+							type="text"
+							bind:value={newWorkerDiscordId}
+							placeholder="123456789012345678"
 							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none"
 						/>
 					</div>

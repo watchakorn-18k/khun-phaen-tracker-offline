@@ -373,9 +373,17 @@ function createTables() {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			color TEXT DEFAULT '#6366F1',
+			discord_id TEXT DEFAULT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`);
+
+  // Try to add discord_id column if not exists
+  try {
+    runSql(`ALTER TABLE assignees ADD COLUMN discord_id TEXT DEFAULT NULL`);
+  } catch (e) {
+    // Column already exists
+  }
 
   // Create tasks table
   runSql(`
@@ -664,6 +672,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 			a.id as a_id,
 			a.name as a_name,
 			a.color as a_color,
+			a.discord_id as a_discord_id,
 			a.created_at as a_created_at
 		FROM tasks t
 		LEFT JOIN assignees a ON t.assignee_id = a.id
@@ -754,6 +763,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
             id: obj.a_id as number,
             name: obj.a_name as string,
             color: obj.a_color as string,
+            discord_id: obj.a_discord_id as string | undefined,
             created_at: obj.a_created_at as string,
           }
         : null,
@@ -773,6 +783,7 @@ export async function getTaskById(id: number): Promise<Task | null> {
 			a.id as a_id,
 			a.name as a_name,
 			a.color as a_color,
+			a.discord_id as a_discord_id,
 			a.created_at as a_created_at
 		FROM tasks t
 		LEFT JOIN assignees a ON t.assignee_id = a.id
@@ -804,6 +815,7 @@ export async function getTaskById(id: number): Promise<Task | null> {
           id: obj.a_id as number,
           name: obj.a_name as string,
           color: obj.a_color as string,
+          discord_id: obj.a_discord_id as string | undefined,
           created_at: obj.a_created_at as string,
         }
       : null,
@@ -994,6 +1006,7 @@ export async function getTasksBySprint(sprintId: number): Promise<Task[]> {
 			a.id as a_id,
 			a.name as a_name,
 			a.color as a_color,
+			a.discord_id as a_discord_id,
 			a.created_at as a_created_at
 		FROM tasks t
 		LEFT JOIN assignees a ON t.assignee_id = a.id
@@ -1024,6 +1037,7 @@ export async function getTasksBySprint(sprintId: number): Promise<Task[]> {
             id: obj.a_id as number,
             name: obj.a_name as string,
             color: obj.a_color as string,
+            discord_id: obj.a_discord_id as string | undefined,
             created_at: obj.a_created_at as string,
           }
         : null,
@@ -1048,6 +1062,7 @@ export async function getAssignees(): Promise<Assignee[]> {
       id: obj.id as number,
       name: obj.name as string,
       color: obj.color as string,
+      discord_id: obj.discord_id as string | undefined,
       created_at: obj.created_at as string,
     };
   });
@@ -1084,9 +1099,10 @@ export async function addAssignee(
 ): Promise<void> {
   if (!db) throw new Error("DB not initialized");
 
-  runSql("INSERT INTO assignees (name, color) VALUES (?, ?)", [
+  runSql("INSERT INTO assignees (name, color, discord_id) VALUES (?, ?, ?)", [
     assignee.name,
     assignee.color || "#6366F1",
+    assignee.discord_id || null,
   ]);
 
   saveDatabase();
@@ -1108,6 +1124,10 @@ export async function updateAssignee(
   if (updates.color !== undefined) {
     sets.push("color = ?");
     values.push(updates.color);
+  }
+  if (updates.discord_id !== undefined) {
+    sets.push("discord_id = ?");
+    values.push(updates.discord_id);
   }
 
   if (sets.length === 0) return;
@@ -1600,7 +1620,7 @@ export async function exportAllData(): Promise<string> {
   // Add assignees section
   csvRows.push("");
   csvRows.push("# ASSIGNEES");
-  const assigneeHeaders = ["id", "name", "color", "created_at"];
+  const assigneeHeaders = ["id", "name", "color", "discord_id", "created_at"];
   csvRows.push(assigneeHeaders.join(","));
 
   for (const row of assigneesResult.values) {
@@ -1915,25 +1935,27 @@ export async function importAllData(
         if (row.id) {
           runSql(
             `
-						REPLACE INTO assignees (id, name, color, created_at)
-						VALUES (?, ?, ?, ?)
+						REPLACE INTO assignees (id, name, color, discord_id, created_at)
+						VALUES (?, ?, ?, ?, ?)
 					`,
             [
               parseInt(row.id),
               row.name || "",
               row.color || "#6366F1",
+              row.discord_id || null,
               row.created_at || new Date().toISOString(),
             ],
           );
         } else {
           runSql(
             `
-						INSERT INTO assignees (name, color, created_at)
-						VALUES (?, ?, ?)
+						INSERT INTO assignees (name, color, discord_id, created_at)
+						VALUES (?, ?, ?, ?)
 					`,
             [
               row.name || "",
               row.color || "#6366F1",
+              row.discord_id || null,
               row.created_at || new Date().toISOString(),
             ],
           );
@@ -2249,12 +2271,13 @@ export async function mergeAllData(csvContent: string): Promise<{
         try {
           runSql(
             `
-						INSERT INTO assignees (name, color, created_at)
-						VALUES (?, ?, ?)
+						INSERT INTO assignees (name, color, discord_id, created_at)
+						VALUES (?, ?, ?, ?)
 					`,
             [
               row.name || "",
               row.color || "#6366F1",
+              row.discord_id || null,
               row.created_at || new Date().toISOString(),
             ],
           );
@@ -2266,15 +2289,20 @@ export async function mergeAllData(csvContent: string): Promise<{
         } catch (e) {
           console.warn("Failed to insert assignee:", e);
         }
-      } else if (existing.name !== row.name || existing.color !== row.color) {
+      } else if (
+        existing.name !== row.name ||
+        existing.color !== row.color ||
+        (existing.discord_id || "") !== (row.discord_id || "")
+      ) {
         try {
           runSql(
             `
-						UPDATE assignees SET name = ?, color = ?, created_at = ? WHERE id = ?
+						UPDATE assignees SET name = ?, color = ?, discord_id = ?, created_at = ? WHERE id = ?
 					`,
             [
               row.name || "",
               row.color || "#6366F1",
+              row.discord_id || null,
               row.created_at || existing.created_at,
               serverId,
             ],

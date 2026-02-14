@@ -138,6 +138,8 @@
 	"taskForm__btn_cancel": "Cancel",
 	"taskForm__btn_close": "Close",
 	"taskForm__validation_title_required": "Please enter task title",
+	"taskForm__unassigned": "Unassigned",
+	"taskForm__unassigned_project": "No Project",
 	"taskList__no_tasks": "No tasks at this time",
 	"taskList__add_task_hint": "Try adding a new task!",
 	"taskList__edit": "Edit",

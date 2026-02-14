@@ -138,6 +138,8 @@
 	"taskForm__btn_cancel": "ยกเลิก",
 	"taskForm__btn_close": "ปิด",
 	"taskForm__validation_title_required": "กรุณาระบุชื่องาน",
+	"taskForm__unassigned": "ยังไม่ได้รับมอบหมาย",
+	"taskForm__unassigned_project": "ยังไม่ได้รับมอบหมายโปรเจค",
 	"taskList__no_tasks": "ไม่มีงานในช่วงเวลานี้",
 	"taskList__add_task_hint": "ลองเพิ่มงานใหม่ดูสิ!",
 	"taskList__edit": "แก้ไข",

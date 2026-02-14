@@ -116,13 +116,24 @@
 				const unix = Math.floor(new Date(Number(year), Number(month) - 1, Number(day)).getTime() / 1000);
 				return `<t:${unix}:D>`;
 			});
+
+			// Append Discord mentions per task line
+			let discordText = discordFormattedText;
+			for (const t of todayTasks) {
+				if (t.assignee?.discord_id && t.title) {
+					// Find the task line and append mention at the end of it
+					const escapedTitle = t.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+					const taskLineRegex = new RegExp(`(✅\\s*${escapedTitle}[^\\n]*)`);
+					discordText = discordText.replace(taskLineRegex, `$1 <@${t.assignee.discord_id}>`);
+				}
+			}
 			
 			const embed = {
 				author: {
 					name: $_('dailyReflect__title'),
 					icon_url: 'attachment://logo.png'
 				},
-				description: discordFormattedText,
+				description: discordText,
 				color: color,
 				fields: [
 					{

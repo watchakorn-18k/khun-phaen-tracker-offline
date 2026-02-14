@@ -787,9 +787,13 @@
 	}
 	
 	// Worker Management Functions
-	async function handleAddWorker(event: CustomEvent<{ name: string; color: string }>) {
+	async function handleAddWorker(event: CustomEvent<{ name: string; color: string; discord_id?: string }>) {
 		try {
-			await addAssigneeDB({ name: event.detail.name, color: event.detail.color });
+			await addAssigneeDB({ 
+				name: event.detail.name, 
+				color: event.detail.color,
+				discord_id: event.detail.discord_id 
+			});
 			await loadData();
 			showMessage($_('page__add_worker_success'));
 			queueHostRealtimeSync('add-worker');
@@ -798,9 +802,13 @@
 		}
 	}
 	
-	async function handleUpdateWorker(event: CustomEvent<{ id: number; name: string; color: string }>) {
+	async function handleUpdateWorker(event: CustomEvent<{ id: number; name: string; color: string; discord_id?: string }>) {
 		try {
-			await updateAssignee(event.detail.id, { name: event.detail.name, color: event.detail.color });
+			await updateAssignee(event.detail.id, { 
+				name: event.detail.name, 
+				color: event.detail.color,
+				discord_id: event.detail.discord_id 
+			});
 			await loadData();
 			showMessage($_('page__update_worker_success'));
 			queueHostRealtimeSync('update-worker');
