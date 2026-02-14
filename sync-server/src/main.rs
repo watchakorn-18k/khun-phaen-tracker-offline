@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State, Json},
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -114,6 +114,14 @@ impl KeyExtractor for IpHeaderKeyExtractor {
             .ok_or(GovernorError::UnableToExtractKey)
             .or_else(|_| Ok("unknown".to_string()))
     }
+}
+
+
+
+#[derive(Deserialize)]
+pub struct CreateRoomRequest {
+    pub desired_room_code: Option<String>,
+    pub desired_host_id: Option<String>,
 }
 
 #[tokio::main]
@@ -240,10 +248,32 @@ async fn health_check(State(state): State<SharedState>) -> impl IntoResponse {
     }))
 }
 
-async fn create_room(State(state): State<SharedState>) -> impl IntoResponse {
-    let room_code = generate_room_code();
+async fn create_room(
+    State(state): State<SharedState>,
+    payload: Option<Json<CreateRoomRequest>>,
+) -> impl IntoResponse {
+    let (requested_code, requested_host_id) = if let Some(Json(req)) = payload {
+        (req.desired_room_code, req.desired_host_id)
+    } else {
+        (None, None)
+    };
+
+    let room_code = requested_code.unwrap_or_else(generate_room_code);
+
+    // If room already exists, return it (idempotent/recovery)
+    if let Some(room) = state.rooms.get(&room_code) {
+        return axum::Json(serde_json::json!({
+            "success": true,
+            "room_code": room_code,
+            "room_id": room.id,
+            "host_id": room.host_id,
+            "websocket_url": format!("ws://localhost:3001/ws"),
+            "restored": true
+        }));
+    }
+
     let room_id = Uuid::new_v4().to_string();
-    let host_id = format!("host_{}", generate_random_id());
+    let host_id = requested_host_id.unwrap_or_else(|| format!("host_{}", generate_random_id()));
 
     let (tx, _) = broadcast::channel(256);
 
