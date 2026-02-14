@@ -2,6 +2,7 @@
 	import { _ } from 'svelte-i18n';
 	import { CheckCircle2, Clock, ClipboardCopy, RefreshCcw, X, Sparkles, MessageSquareQuote, Settings, Send, Save, AlertCircle } from 'lucide-svelte';
 	import { fade, scale, fly, slide } from 'svelte/transition';
+	import logoUrl from '$lib/assets/logo.png';
 	import { timeLogs, formatDuration } from '$lib/stores/timeLogs';
 	import type { Task } from '$lib/types';
 	import { getTasks } from '$lib/db';
@@ -109,14 +110,56 @@
 		isSending = true;
 		sendError = '';
 		try {
+			// Vibrant Violet Color for a premium feel
+			const color = parseInt('8B5CF6', 16);
+			const discordFormattedText = generatedText.replace(/\(?(\d{1,2})\/(\d{1,2})\/(\d{4})\)?/g, (_match, month, day, year) => {
+				const unix = Math.floor(new Date(Number(year), Number(month) - 1, Number(day)).getTime() / 1000);
+				return `<t:${unix}:D>`;
+			});
+			
+			const embed = {
+				author: {
+					name: $_('dailyReflect__title'),
+					icon_url: 'attachment://logo.png'
+				},
+				description: discordFormattedText,
+				color: color,
+				fields: [
+					{
+						name: "📊 Statistics",
+						value: `Total Tasks: **${todayTasks.length}**`,
+						inline: true
+					},
+					{
+						name: "🕒 Report Time",
+						value: `<t:${Math.floor(Date.now() / 1000)}:f>`,
+						inline: true
+					},
+					{
+						name: "📍 Source",
+						value: "`Khun Phaen Tracker`",
+						inline: true
+					}
+				],
+				footer: {
+					text: "Khun Phaen Task Tracker ✨",
+					icon_url: 'attachment://logo.png'
+
+				},
+				timestamp: new Date().toISOString()
+			};
+
+			const logoResponse = await fetch(logoUrl);
+			if (!logoResponse.ok) throw new Error('Failed to load logo asset');
+			const logoBlob = await logoResponse.blob();
+
+			const formData = new FormData();
+			formData.append('payload_json', JSON.stringify({ embeds: [embed] }));
+			formData.append('files[0]', logoBlob, 'logo.png');
+
 			const response = await fetch(webhookUrl, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					content: generatedText
-				})
+				body: formData
 			});
 
 			if (!response.ok) throw new Error('Failed to send');
