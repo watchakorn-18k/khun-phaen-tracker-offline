@@ -1,5 +1,5 @@
 # Build stage
-FROM docker.io/library/rust:1.75-slim AS builder
+FROM docker.io/library/rust:1-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev
 
 # Copy Cargo files
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
 # Build release binary
