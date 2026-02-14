@@ -57,6 +57,12 @@
 			if (t.category && t.category !== 'อื่นๆ' && t.category !== 'Other' && t.category !== 'อื่นๆ (Other)') {
 				str += ` - ${t.category}`;
 			}
+			if (t.updated_at) {
+				// Format the update time clearly (only time as requested)
+				const date = new Date(t.updated_at.includes('T') ? t.updated_at : t.updated_at + 'Z');
+				const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+				str += ` [${timeStr}]`;
+			}
 			return str;
 		});
 
