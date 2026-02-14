@@ -139,7 +139,7 @@
 			</button>
 		</div>
 	{:else}
-		<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-[999] transition-colors">
+		<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-999 transition-colors">
 			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 				<div class="flex items-center justify-between h-16">
 					<div class="flex items-center gap-3">
@@ -230,7 +230,7 @@
 		</main>
 
 		{#if whiteboardMessage}
-			<div class="fixed top-20 right-4 z-[110] animate-fade-in">
+			<div class="fixed top-20 right-4 z-110 animate-fade-in">
 				<div class="{whiteboardMessageType === 'success' ? 'bg-success' : 'bg-danger'} text-white px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium">
 					{whiteboardMessage}
 				</div>

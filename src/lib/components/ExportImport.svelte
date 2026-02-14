@@ -203,7 +203,7 @@
 		</button>
 
 		{#if showExportDropdown}
-			<div class="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[220px] z-20 animate-fade-in">
+			<div class="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-55 z-20 animate-fade-in">
 				<button
 					on:click={handleExportCSV}
 					class="w-full flex items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
@@ -255,7 +255,7 @@
 						<ChevronRight size={14} class="text-gray-500 dark:text-gray-400" />
 					</button>
 
-					<div class="hidden group-hover:block group-focus-within:block absolute left-full top-0 ml-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[280px] z-30 animate-fade-in">
+					<div class="hidden group-hover:block group-focus-within:block absolute left-full top-0 ml-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-70 z-30 animate-fade-in">
 						{#each databaseTargets as target}
 							<button
 								on:click={() => handleExportDatabase(target)}

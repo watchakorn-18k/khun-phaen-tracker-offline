@@ -194,9 +194,13 @@
 
 {#if show}
 	<div 
-		class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+		class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
 		transition:fade={{ duration: 200 }}
 		on:mousedown|self={() => (show = false)}
+		on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (show = false)}
+		role="button"
+		tabindex="0"
+		aria-label={$_('dailyReflect__btn_close')}
 	>
 		<div 
 			class="relative w-full max-w-lg bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-gray-700/50 overflow-hidden"
@@ -204,10 +208,10 @@
 		>
 			<!-- Premium Header with Gradient -->
 			<div class="relative px-6 py-6 overflow-hidden">
-				<div class="absolute inset-0 bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent pointer-events-none"></div>
+				<div class="absolute inset-0 bg-linear-to-br from-primary/10 via-secondary/5 to-transparent pointer-events-none"></div>
 				<div class="relative flex items-center justify-between">
 					<div class="flex items-center gap-3">
-						<div class="p-3 bg-gradient-to-br from-primary to-blue-600 rounded-2xl text-white shadow-lg shadow-primary/20">
+						<div class="p-3 bg-linear-to-br from-primary to-blue-600 rounded-2xl text-white shadow-lg shadow-primary/20">
 							<MessageSquareQuote size={24} />
 						</div>
 						<div>
@@ -274,7 +278,7 @@
 				{:else}
 					<div class="space-y-6" in:fly={{ y: 20, duration: 400 }}>
 						<!-- Stats Summary Card (Task count only) -->
-						<div class="w-full group p-6 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/10 dark:to-teal-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 transition-all hover:shadow-lg hover:shadow-emerald-500/5">
+						<div class="w-full group p-6 bg-linear-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/10 dark:to-teal-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 transition-all hover:shadow-lg hover:shadow-emerald-500/5">
 							<div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
 								<CheckCircle2 size={20} />
 								<span class="text-xs font-bold uppercase tracking-[0.2em]">{$_('dailyReflect__tasks_section')}</span>
@@ -309,7 +313,7 @@
 							</div>
 							
 							<div class="relative group">
-								<div class="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-500"></div>
+								<div class="absolute -inset-0.5 bg-linear-to-r from-primary/20 to-secondary/20 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-500"></div>
 								<div class="relative">
 									<textarea 
 										bind:value={generatedText}
@@ -366,7 +370,7 @@
 			</div>
 
 			<!-- Fancy Footer Section -->
-			<div class="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex justify-center">
+			<div class="px-6 py-4 bg-linear-to-r from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex justify-center">
 				<div class="text-[10px] items-center flex gap-1.5 text-gray-400 dark:text-gray-500 font-black uppercase tracking-[0.2em]">
 					<div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
 					{$_('dailyReflect__footer_text')}

@@ -481,7 +481,7 @@
 							<div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 transition-colors">
 								<div class="flex items-start gap-3">
 									<!-- Status Icon -->
-									<div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
+									<div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0
 										{sprint.status === 'active' ? 'bg-green-500 text-white' : 
 										 sprint.status === 'completed' ? 'bg-gray-400 text-white' : 
 										 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400'}">

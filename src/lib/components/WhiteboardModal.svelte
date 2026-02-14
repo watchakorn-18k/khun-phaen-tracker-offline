@@ -194,7 +194,7 @@
 {#if open}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div class="fixed inset-0 z-[100] bg-black/55 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center" on:click|self={() => dispatch('close')}>
+	<div class="fixed inset-0 z-100 bg-black/55 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center" on:click|self={() => dispatch('close')}>
 		<div class="w-full max-w-7xl h-[92vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
 			<div class="px-4 sm:px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
 				<div class="min-w-0">

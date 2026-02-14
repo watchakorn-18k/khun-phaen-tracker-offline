@@ -67,13 +67,13 @@
 	>
 		<span class="truncate flex items-center gap-2">
 			{#if selectedBadge}
-				<span class="flex-shrink-0 w-2 h-2 rounded-full {selectedBadgeColor || 'bg-gray-400'}"></span>
+				<span class="shrink-0 w-2 h-2 rounded-full {selectedBadgeColor || 'bg-gray-400'}"></span>
 			{/if}
 			<span class={value === 'all' || value === null ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}>
 				{selectedLabel}
 			</span>
 		</span>
-		<svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-2 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<svg class="w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 		</svg>
 	</button>
@@ -114,16 +114,16 @@
 						>
 							{#if option.badge}
 								{#if option.badgeColor?.startsWith('#')}
-									<span class="flex-shrink-0 w-2 h-2 rounded-full" style="background-color: {option.badgeColor}"></span>
-								{:else}
-									<span class="flex-shrink-0 w-2 h-2 rounded-full {option.badgeColor || 'bg-gray-400'}"></span>
-								{/if}
+								<span class="shrink-0 w-2 h-2 rounded-full" style="background-color: {option.badgeColor}"></span>
+							{:else}
+								<span class="shrink-0 w-2 h-2 rounded-full {option.badgeColor || 'bg-gray-400'}"></span>
 							{/if}
-							<span class="truncate flex-1">{option.label}</span>
-							{#if value === option.value}
-								<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-								</svg>
+						{/if}
+						<span class="truncate flex-1">{option.label}</span>
+						{#if value === option.value}
+							<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
 							{/if}
 						</button>
 					{/each}

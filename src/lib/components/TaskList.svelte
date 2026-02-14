@@ -104,7 +104,7 @@
 
 						{#if task.notes}
 							<p class="mt-2 text-sm text-gray-600 dark:text-gray-300 flex items-start gap-1">
-								<FileText size={14} class="mt-0.5 flex-shrink-0" />
+								<FileText size={14} class="mt-0.5 shrink-0" />
 								<span class="line-clamp-2">{task.notes}</span>
 							</p>
 						{/if}

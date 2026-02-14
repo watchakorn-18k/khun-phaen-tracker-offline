@@ -82,7 +82,7 @@
 			use:dndzone={{ items: todoItems, flipDurationMs: 200 }}
 			on:consider={(e) => handleDndConsider(e, 'todo')}
 			on:finalize={(e) => handleDndFinalize(e, 'todo')}
-			class="space-y-2 min-h-[100px]"
+			class="space-y-2 min-h-25"
 		>
 			{#each todoItems as task (task.id)}
 				<div class="kanban-card relative group">
@@ -100,20 +100,20 @@
 						{#if task.project}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
-								<span class="truncate max-w-[60px]">{task.project}</span>
+								<span class="truncate max-w-15">{task.project}</span>
 							</span>
 						{/if}
 						{#if getSprintName(task.sprint_id)}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
 								<Flag size={10} />
-								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
+								<span class="truncate max-w-15">{getSprintName(task.sprint_id)}</span>
 							</span>
 						{/if}
 						<span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">{task.category}</span>
 						{#if task.assignee}
 							<span class="flex items-center gap-1" title={task.assignee.name}>
 								<span class="w-2 h-2 rounded-full" style="background-color: {task.assignee.color}"></span>
-								<span class="truncate max-w-[60px]">{task.assignee.name}</span>
+								<span class="truncate max-w-15">{task.assignee.name}</span>
 							</span>
 						{/if}
 					</div>
@@ -157,7 +157,7 @@
 			use:dndzone={{ items: inProgressItems, flipDurationMs: 200 }}
 			on:consider={(e) => handleDndConsider(e, 'in-progress')}
 			on:finalize={(e) => handleDndFinalize(e, 'in-progress')}
-			class="space-y-2 min-h-[100px]"
+			class="space-y-2 min-h-25"
 		>
 			{#each inProgressItems as task (task.id)}
 				<div class="kanban-card relative group border-primary/30">
@@ -175,20 +175,20 @@
 						{#if task.project}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
-								<span class="truncate max-w-[60px]">{task.project}</span>
+								<span class="truncate max-w-15">{task.project}</span>
 							</span>
 						{/if}
 						{#if getSprintName(task.sprint_id)}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
 								<Flag size={10} />
-								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
+								<span class="truncate max-w-15">{getSprintName(task.sprint_id)}</span>
 							</span>
 						{/if}
 						<span class="px-1.5 py-0.5 bg-primary/10 text-primary rounded">{task.category}</span>
 						{#if task.assignee}
 							<span class="flex items-center gap-1" title={task.assignee.name}>
 								<span class="w-2 h-2 rounded-full" style="background-color: {task.assignee.color}"></span>
-								<span class="truncate max-w-[60px]">{task.assignee.name}</span>
+								<span class="truncate max-w-15">{task.assignee.name}</span>
 							</span>
 						{/if}
 					</div>
@@ -232,7 +232,7 @@
 			use:dndzone={{ items: doneItems, flipDurationMs: 200 }}
 			on:consider={(e) => handleDndConsider(e, 'done')}
 			on:finalize={(e) => handleDndFinalize(e, 'done')}
-			class="space-y-2 min-h-[100px]"
+			class="space-y-2 min-h-25"
 		>
 			{#each doneItems as task (task.id)}
 				<div class="kanban-card relative group border-success/30 opacity-75">
@@ -250,20 +250,20 @@
 						{#if task.project}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded">
 								<Folder size={10} />
-								<span class="truncate max-w-[60px]">{task.project}</span>
+								<span class="truncate max-w-15">{task.project}</span>
 							</span>
 						{/if}
 						{#if getSprintName(task.sprint_id)}
 							<span class="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded">
 								<Flag size={10} />
-								<span class="truncate max-w-[60px]">{getSprintName(task.sprint_id)}</span>
+								<span class="truncate max-w-15">{getSprintName(task.sprint_id)}</span>
 							</span>
 						{/if}
 						<span class="px-1.5 py-0.5 bg-success/10 text-success rounded">{task.category}</span>
 						{#if task.assignee}
 							<span class="flex items-center gap-1" title={task.assignee.name}>
 								<span class="w-2 h-2 rounded-full" style="background-color: {task.assignee.color}"></span>
-								<span class="truncate max-w-[60px]">{task.assignee.name}</span>
+								<span class="truncate max-w-15">{task.assignee.name}</span>
 							</span>
 						{/if}
 					</div>

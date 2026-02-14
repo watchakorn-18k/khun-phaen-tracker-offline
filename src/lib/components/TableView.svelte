@@ -377,11 +377,11 @@
 						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
 							<div class="flex flex-col min-w-0">
-								<span class="font-medium text-gray-900 dark:text-white text-sm truncate max-w-[120px] lg:max-w-[200px] xl:max-w-xs" title={task.title}>
+								<span class="font-medium text-gray-900 dark:text-white text-sm truncate max-w-30 lg:max-w-50 xl:max-w-xs" title={task.title}>
 									{task.title}
 								</span>
 								{#if task.notes}
-									<span class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 max-w-[120px] lg:max-w-[200px] xl:max-w-xs">
+									<span class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 max-w-30 lg:max-w-50 xl:max-w-xs">
 										{task.notes}
 									</span>
 								{/if}
@@ -395,7 +395,7 @@
 						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3 hidden lg:table-cell">
 							{#if task.project}
-								<span class="inline-flex items-center px-2 py-0.5 lg:px-2.5 lg:py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 truncate max-w-[100px]" title={task.project}>
+								<span class="inline-flex items-center px-2 py-0.5 lg:px-2.5 lg:py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 truncate max-w-25" title={task.project}>
 									{task.project}
 								</span>
 							{:else}
@@ -411,12 +411,12 @@
 							{#if task.assignee}
 								<div class="flex items-center gap-1.5 lg:gap-2">
 									<div
-										class="w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium text-white flex-shrink-0"
+										class="w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0"
 										style="background-color: {task.assignee.color || '#6366F1'}"
 									>
 										{task.assignee.name.charAt(0)}
 									</div>
-									<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 truncate max-w-[60px] lg:max-w-[100px]" title={task.assignee.name}>
+									<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 truncate max-w-15 lg:max-w-25" title={task.assignee.name}>
 										{task.assignee.name}
 									</span>
 								</div>
@@ -426,7 +426,7 @@
 						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3 hidden xl:table-cell">
 							{#if getSprintName(task.sprint_id)}
-								<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 truncate max-w-[100px]" title={getSprintName(task.sprint_id)}>
+								<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 truncate max-w-25" title={getSprintName(task.sprint_id)}>
 									<Flag size={10} />
 									{getSprintName(task.sprint_id)}
 								</span>
@@ -499,7 +499,7 @@
 								type="checkbox"
 								checked={selectedTasks.has(task.id!)}
 								on:change={() => toggleSelect(task.id!)}
-								class="w-4 h-4 mt-1 rounded border-gray-300 text-primary focus:ring-primary flex-shrink-0"
+								class="w-4 h-4 mt-1 rounded border-gray-300 text-primary focus:ring-primary shrink-0"
 							/>
 							<div class="flex-1 min-w-0">
 								<!-- Header: Title and Actions -->
@@ -507,7 +507,7 @@
 									<h3 class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 flex-1" title={task.title}>
 										{task.title}
 									</h3>
-									<div class="flex items-center gap-1 flex-shrink-0">
+									<div class="flex items-center gap-1 shrink-0">
 										<button
 											on:click={() => dispatch('edit', task)}
 											class="p-1.5 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -577,7 +577,7 @@
 										<!-- Project -->
 										{#if task.project}
 											<div class="flex items-center gap-2">
-												<Folder size={14} class="text-gray-400 flex-shrink-0" />
+												<Folder size={14} class="text-gray-400 shrink-0" />
 												<span class="text-xs text-gray-700 dark:text-gray-300">{task.project}</span>
 											</div>
 										{/if}
@@ -604,14 +604,14 @@
 										<!-- Sprint -->
 										{#if getSprintName(task.sprint_id)}
 											<div class="flex items-center gap-2">
-												<Flag size={14} class="text-indigo-500 flex-shrink-0" />
+												<Flag size={14} class="text-indigo-500 shrink-0" />
 												<span class="text-xs text-gray-700 dark:text-gray-300">{getSprintName(task.sprint_id)}</span>
 											</div>
 										{/if}
 
 										<!-- Full Due Date -->
 										<div class="flex items-center gap-2">
-											<Calendar size={14} class="text-gray-400 flex-shrink-0" />
+											<Calendar size={14} class="text-gray-400 shrink-0" />
 											<span class="text-xs text-gray-700 dark:text-gray-300">{formatDateFull(task.date)}</span>
 										</div>
 

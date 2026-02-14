@@ -85,7 +85,7 @@
 		<span class="truncate {value === 'all' || value === null ? 'text-gray-500' : 'text-gray-900 dark:text-gray-100'}">
 			{selectedLabel}
 		</span>
-		<svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-2 transition-transform {isOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<svg class="w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform {isOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 		</svg>
 	</button>
@@ -145,11 +145,11 @@
 						>
 							<span class="truncate flex-1">{sprint.name}</span>
 							{#if sprint.status === 'active'}
-								<span class="flex-shrink-0 px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full">กำลังทำ</span>
+								<span class="shrink-0 px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full">กำลังทำ</span>
 							{:else if sprint.status === 'completed'}
-								<span class="flex-shrink-0 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded-full">เสร็จสิ้น</span>
+								<span class="shrink-0 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded-full">เสร็จสิ้น</span>
 							{:else}
-								<span class="flex-shrink-0 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">วางแผน</span>
+								<span class="shrink-0 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">วางแผน</span>
 							{/if}
 						</button>
 					{/each}

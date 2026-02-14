@@ -3081,7 +3081,7 @@
 
 {#if videoExportInProgress}
 	<div class="fixed top-20 right-4 z-50 animate-fade-in">
-		<div class="bg-blue-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[280px]">
+		<div class="bg-blue-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-70">
 			<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 				<circle cx="12" cy="12" r="10" stroke-opacity="0.3"></circle>
 				<path d="M22 12a10 10 0 0 1-10 10"></path>
@@ -3550,7 +3550,7 @@
 						</div>
 					</div>
 
-					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-gradient-to-br from-slate-50 to-blue-50 dark:from-gray-800 dark:to-gray-900">
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-linear-to-br from-slate-50 to-blue-50 dark:from-gray-800 dark:to-gray-900">
 						<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
 							งานเฉลี่ย/วัน: {monthlySummary.avgPerDay.toFixed(2)} · เวลารวม: {(monthlySummary.totalMinutes / 60).toFixed(1)} ชม.
 						</p>
@@ -3689,7 +3689,7 @@
 									class="w-full text-left px-4 py-3 rounded-xl transition-colors mb-1 {itemIndex === commandSelectedIndex ? 'bg-primary/10 border border-primary/30' : 'hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'}"
 								>
 									<div class="flex items-center gap-3">
-										<div class="flex-shrink-0 p-2 rounded-lg {itemIndex === commandSelectedIndex ? 'bg-primary/20 text-primary' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}">
+										<div class="shrink-0 p-2 rounded-lg {itemIndex === commandSelectedIndex ? 'bg-primary/20 text-primary' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}">
 											{#if item.icon}
 												<svelte:component this={item.icon} size={18} />
 											{:else}
@@ -3697,6 +3697,7 @@
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
+											<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{item.label}</p>
 											<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate mb-0.5">{item.label}</p>
 											{#if item.project}
 												<div class="flex items-center gap-2 flex-wrap">

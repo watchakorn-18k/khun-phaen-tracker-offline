@@ -486,7 +486,7 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="project" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+						<label for="project" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 							<Folder size={14} />
 							{$_('taskForm__project_label')}
 						</label>
@@ -502,7 +502,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+						<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 							<Tag size={14} />
 							{$_('taskForm__category_label')}
 						</label>
@@ -517,7 +517,7 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+						<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 							<Calendar size={14} />
 							{$_('taskForm__date_label')}
 						</label>
@@ -529,7 +529,7 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+						<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 							<Calendar size={14} />
 							วันสิ้นสุด (Optional)
 						</label>
@@ -543,7 +543,7 @@
 
 				<!-- Assignee Section -->
 				<div>
-					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+					<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 						<User size={14} />
 						{$_('taskForm__assignee_label')}
 					</label>
@@ -685,7 +685,7 @@
 			<!-- svelte-ignore a11y-click-events-have-key-events -->
 			<!-- svelte-ignore a11y-no-static-element-interactions -->
 			<div
-				class="fixed inset-0 bg-black/40 flex items-center justify-center z-[70] p-4"
+				class="fixed inset-0 bg-black/40 flex items-center justify-center z-70 p-4"
 				on:click|self={closeBranchDialog}
 			>
 				<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
