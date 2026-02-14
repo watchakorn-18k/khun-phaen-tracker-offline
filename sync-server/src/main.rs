@@ -12,6 +12,8 @@ use tokio::sync::broadcast;
 use tracing::{info, warn};
 use uuid::Uuid;
 use dotenv::dotenv; // Import dotenv
+use tower_governor::{key_extractor::KeyExtractor, errors::GovernorError};
+
 
 type SharedState = Arc<AppState>;
 
@@ -91,6 +93,29 @@ pub enum ServerMessage {
     Pong,
 }
 
+#[derive(Clone, Copy)]
+struct IpHeaderKeyExtractor;
+
+impl KeyExtractor for IpHeaderKeyExtractor {
+    type Key = String;
+
+    fn extract<B>(&self, req: &axum::http::Request<B>) -> Result<Self::Key, GovernorError> {
+        req.headers()
+            .get("x-forwarded-for")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.split(',').next())
+            .map(|s| s.trim().to_string())
+            .or_else(|| {
+                req.headers()
+                    .get("x-real-ip")
+                    .and_then(|h| h.to_str().ok())
+                    .map(|s| s.to_string())
+            })
+            .ok_or(GovernorError::UnableToExtractKey)
+            .or_else(|_| Ok("unknown".to_string()))
+    }
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -125,6 +150,7 @@ async fn main() {
 
     let governor_conf = Arc::new(
         tower_governor::governor::GovernorConfigBuilder::default()
+            .key_extractor(IpHeaderKeyExtractor)
             .per_second(2)
             .burst_size(5)
             .finish()
