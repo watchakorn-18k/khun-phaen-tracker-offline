@@ -11,6 +11,7 @@
 	export let dailyTrend: { date: string; count: number }[] = [];
 	export let projectBreakdown: { name: string; count: number }[] = [];
 	export let assigneeBreakdown: { name: string; count: number }[] = [];
+	export let categoryBreakdown: { name: string; count: number }[] = [];
 
 	let container: HTMLDivElement;
 	let root: Root | null = null;
@@ -35,6 +36,7 @@
 				dailyTrend,
 				projectBreakdown,
 				assigneeBreakdown,
+				categoryBreakdown,
 				isDark: isDarkMode(),
 				trendMode,
 				labels: {
@@ -42,6 +44,15 @@
 					trend: $_('monthlyCharts__trend_title'),
 					project: $_('monthlyCharts__project_title'),
 					assignee: $_('monthlyCharts__assignee_title'),
+					category: $_('monthlyCharts__category_dist'),
+					prediction: $_('monthlyCharts__prediction_title'),
+					predictionDesc: $_('monthlyCharts__prediction_desc'),
+					predictionNextMonth: $_('monthlyCharts__prediction_next_month'),
+					predictionConfidence: $_('monthlyCharts__prediction_confidence'),
+					predictionTasks: $_('monthlyCharts__prediction_tasks'),
+					predictionExperimental: $_('monthlyCharts__label_experimental'),
+					predictionHelpTitle: $_('monthlyCharts__prediction_help_title'),
+					predictionHelpContent: $_('monthlyCharts__prediction_help_content'),
 					tasksCount: $_('monthlyCharts__tasks_count'),
 					done: $_('page__filter_status_done'),
 					inProgress: $_('page__filter_status_in_progress'),
@@ -72,7 +83,7 @@
 		}
 	});
 
-	$: if (mounted && (done || inProgress || todo || dailyTrend || projectBreakdown || assigneeBreakdown || trendMode)) {
+	$: if (mounted && (done || inProgress || todo || dailyTrend || projectBreakdown || assigneeBreakdown || categoryBreakdown || trendMode)) {
 		render();
 	}
 

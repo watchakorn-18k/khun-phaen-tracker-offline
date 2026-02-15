@@ -409,5 +409,14 @@
 	"monthlyCharts__avg_day": "Avg tasks/day",
 	"monthlyCharts__total_time": "Total Time",
 	"monthlyCharts__recent_tasks_title": "Recent Tasks in Month",
-	"monthlyCharts__no_tasks_period": "No tasks in this period"
+	"monthlyCharts__no_tasks_period": "No tasks in this period",
+	"monthlyCharts__prediction_title": "AI Completion Forecast",
+	"monthlyCharts__prediction_desc": "Smart baseline prediction based on your 30-day velocity trend.",
+	"monthlyCharts__prediction_next_month": "Projected Next 30 Days",
+	"monthlyCharts__prediction_confidence": "Trend-based Confidence",
+	"monthlyCharts__category_dist": "Category Mastery",
+	"monthlyCharts__prediction_tasks": "potential tasks",
+	"monthlyCharts__label_experimental": "Experimental",
+	"monthlyCharts__prediction_help_title": "How it works?",
+	"monthlyCharts__prediction_help_content": "This forecast uses Linear Regression to analyze your daily task completion velocity over the last 30 days. It projects a baseline for the next 30 days based on your current momentum. The confidence level shows how consistent your work pattern is (higher r-squared value)."
 }

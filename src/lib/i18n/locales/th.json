@@ -409,5 +409,14 @@
 	"monthlyCharts__avg_day": "งานเฉลี่ย/วัน",
 	"monthlyCharts__total_time": "เวลารวม",
 	"monthlyCharts__recent_tasks_title": "รายการล่าสุดในรอบเดือน",
-	"monthlyCharts__no_tasks_period": "ไม่มีงานในช่วงเวลานี้"
+	"monthlyCharts__no_tasks_period": "ไม่มีงานในช่วงเวลานี้",
+	"monthlyCharts__prediction_title": "ทำนายประสิทธิภาพด้วย AI",
+	"monthlyCharts__prediction_desc": "คำนวณจากความเร็วในฐานข้อมูล 30 วันย้อนหลังของคุณ",
+	"monthlyCharts__prediction_next_month": "คาดการณ์ 30 วันข้างหน้า",
+	"monthlyCharts__prediction_confidence": "ระดับความเชื่อมั่นของเทรนด์",
+	"monthlyCharts__category_dist": "ทักษะและความเชี่ยวชาญ",
+	"monthlyCharts__prediction_tasks": "งานที่อาจเกิดขึ้น",
+	"monthlyCharts__label_experimental": "ทดลอง",
+	"monthlyCharts__prediction_help_title": "มันทำงานอย่างไร?",
+	"monthlyCharts__prediction_help_content": "ระบบใช้สมการถดถอยเชิงเส้น (Linear Regression) วิเคราะห์ความเร็วในการเคลียร์งานของคุณในช่วง 30 วันที่ผ่านมา เพื่อคาดการณ์จำนวนงานที่คุณน่าจะทำได้ใน 30 วันข้างหน้าตามแรงส่งปัจจุบัน ระดับความเชื่อมั่นบอกถึงความสม่ำเสมอของรูปแบบการทำงานของคุณ (คำนวณจากค่า r-squared)"
 }

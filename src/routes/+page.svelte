@@ -3099,6 +3099,7 @@
 		avgPerDay: number;
 		projectBreakdown: { name: string; count: number }[];
 		assigneeBreakdown: { name: string; count: number }[];
+		categoryBreakdown: { name: string; count: number }[];
 		dailyTrend: { date: string; count: number }[];
 		recentTasks: Task[];
 	}
@@ -3134,12 +3135,16 @@
 
 		const projectMap = new Map<string, number>();
 		const assigneeMap = new Map<string, number>();
+		const categoryMap = new Map<string, number>();
 		for (const task of tasks30) {
 			const projectName = (task.project || 'ไม่ระบุโปรเจค').trim() || 'ไม่ระบุโปรเจค';
 			projectMap.set(projectName, (projectMap.get(projectName) || 0) + 1);
 
 			const assigneeName = (task.assignee?.name || 'ไม่ระบุผู้รับผิดชอบ').trim() || 'ไม่ระบุผู้รับผิดชอบ';
 			assigneeMap.set(assigneeName, (assigneeMap.get(assigneeName) || 0) + 1);
+
+			const categoryName = (task.category || 'อื่นๆ').trim() || 'อื่นๆ';
+			categoryMap.set(categoryName, (categoryMap.get(categoryName) || 0) + 1);
 		}
 
 		const recentTasks = [...tasks30]
@@ -3174,6 +3179,7 @@
 			avgPerDay: tasks30.length / 30,
 			projectBreakdown: toSortedPairs(projectMap).slice(0, 8),
 			assigneeBreakdown: toSortedPairs(assigneeMap).slice(0, 8),
+			categoryBreakdown: toSortedPairs(categoryMap).slice(0, 8),
 			dailyTrend,
 			recentTasks
 		};
@@ -3572,7 +3578,7 @@
 				tabindex="0"
 				aria-label={$_('page__summary_30_days')}
 			>
-			<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col" bind:this={monthlySummaryRef}>
+			<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[85vh] overflow-hidden flex flex-col" bind:this={monthlySummaryRef}>
 				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
 					<div>
 						<h3 class="text-xl font-bold text-gray-900 dark:text-white">{$_('page__summary_30_days')}</h3>
@@ -3664,6 +3670,7 @@
 							dailyTrend={monthlySummary.dailyTrend}
 							projectBreakdown={monthlySummary.projectBreakdown}
 							assigneeBreakdown={monthlySummary.assigneeBreakdown}
+							categoryBreakdown={monthlySummary.categoryBreakdown}
 						/>
 					</div>
 
