@@ -236,6 +236,19 @@
         }
     }
 
+    async function handleManualSync() {
+        if ($syncMessage.includes('กำลัง')) return;
+        
+        // Step 1: Send local changes
+        await syncDocumentToServer({ source: 'manual' });
+        
+        // Step 2: Request latest from host/others after a small delay
+        // to avoid message congestion if needed, but here simple is fine
+        setTimeout(() => {
+            requestSyncFromServer();
+        }, 500);
+    }
+
     function togglePanel() {
         showPanel = !showPanel;
     }
@@ -527,29 +540,16 @@
                         </ul>
                     </div>
                     
-                    <!-- Actions -->
-                    <div class="flex gap-2">
-                        <!-- All peers can sync up -->
-                        <button
-                            on:click={() => syncDocumentToServer()}
-                            disabled={$syncMessage.includes('กำลัง')}
-                            class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 dark:disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                            title="ส่งข้อมูลของคุณให้ทุกคนในห้อง"
-                        >
-                            <RefreshCw size={16} class={$syncMessage.includes('กำลังส่ง') ? 'animate-spin' : ''} />
-                            ส่งข้อมูลขึ้น
-                        </button>
-                        <!-- All peers can request latest -->
-                        <button
-                            on:click={requestSyncFromServer}
-                            disabled={$syncMessage.includes('กำลัง')}
-                            class="flex-1 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 dark:disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                            title="ขอข้อมูลล่าสุดจากห้อง"
-                        >
-                            <RefreshCw size={16} class={$syncMessage.includes('กำลังขอ') ? 'animate-spin' : ''} />
-                            ดึงข้อมูลล่าสุด
-                        </button>
-                    </div>
+                    <!-- Single Sync Action -->
+                    <button
+                        on:click={handleManualSync}
+                        disabled={$syncMessage.includes('กำลัง')}
+                        class="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 dark:disabled:opacity-50 text-white rounded-xl font-semibold transition-all shadow-md hover:shadow-lg active:scale-[0.98] flex items-center justify-center gap-3"
+                        title="แลกเปลี่ยนข้อมูลล่าสุดกับทุกคนในทีม"
+                    >
+                        <RefreshCw size={20} class={$syncMessage.includes('กำลัง') ? 'animate-spin' : ''} />
+                        ซิงก์ข้อมูล (Sync Now)
+                    </button>
                     
                     {#if $lastServerSync}
                         <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
