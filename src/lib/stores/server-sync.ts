@@ -1,7 +1,7 @@
 import { writable, get } from "svelte/store";
 import { base } from "$app/paths";
 import type { Task } from "$lib/types";
-import { exportAllData, importAllData } from "$lib/db";
+import { exportAllData, importAllData, applyCRDTTasksToSQLite } from "$lib/db";
 import {
   initCRDT,
   exportCRDTDocument,
@@ -59,8 +59,14 @@ export function enableAutoImport() {
           // Sync merged CRDT tasks back to SQLite
           if (get(crdtReady)) {
             const crdtTasks = getCRDTTasks();
-            // This will be handled by the app reloading data
-            console.log(`📊 ${crdtTasks.length} tasks in CRDT after merge`);
+            const { added, updated } = await applyCRDTTasksToSQLite(crdtTasks);
+            console.log(`📊 SQLite sync: +${added} added, ${updated} updated`);
+
+            // Reload page to refresh data ONLY if something changed
+            if (added > 0 || updated > 0) {
+              console.log("🔄 Data changed, reloading page...");
+              window.location.reload();
+            }
           }
         } else {
           // Legacy CSV format - use old method
@@ -69,10 +75,9 @@ export function enableAutoImport() {
             useExistingIds: true,
           });
           console.log(`✅ CSV import: ${result.tasks} tasks`);
+          // Reload for CSV as it's usually a full reset
+          window.location.reload();
         }
-
-        // Reload page to refresh data
-        window.location.reload();
       } catch (e) {
         console.error("❌ Auto-import failed:", e);
         throw e;
@@ -151,12 +156,8 @@ interface SyncDocumentOptions {
   source?: "manual" | "auto";
 }
 
-function canHostAutoSyncNow(): boolean {
-  return (
-    get(serverStatus) === "connected" &&
-    get(isServerHost) &&
-    Boolean(get(serverRoomCode))
-  );
+function canAutoSyncNow(): boolean {
+  return get(serverStatus) === "connected" && Boolean(get(serverRoomCode));
 }
 
 function clearHostAutoSyncState() {
@@ -168,22 +169,25 @@ function clearHostAutoSyncState() {
   syncInFlight = false;
 }
 
-// Queue host sync after local changes. Debounced to prevent spam when many edits happen quickly.
-export function scheduleHostRealtimeSync(
+// Queue sync after local changes. Debounced to prevent spam when many edits happen quickly.
+export function scheduleRealtimeSync(
   reason: string = "local-change",
   debounceMs: number = HOST_AUTO_SYNC_DEBOUNCE_MS,
 ): boolean {
-  if (!canHostAutoSyncNow()) return false;
+  if (!canAutoSyncNow()) return false;
 
   if (hostAutoSyncTimer) clearTimeout(hostAutoSyncTimer);
   hostAutoSyncTimer = setTimeout(() => {
     hostAutoSyncTimer = null;
-    console.log(`⚡ Host realtime sync triggered (${reason})`);
+    console.log(`⚡ Realtime sync triggered (${reason})`);
     void syncDocumentToServer({ silent: true, source: "auto" });
   }, debounceMs);
 
   return true;
 }
+
+// Keep the old name for backward compatibility during transition if needed
+export const scheduleHostRealtimeSync = scheduleRealtimeSync;
 
 // Save connection settings to localStorage
 function saveConnectionSettings(

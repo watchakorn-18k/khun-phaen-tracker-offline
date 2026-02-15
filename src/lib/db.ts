@@ -672,6 +672,80 @@ export async function updateTask(
   }
 }
 
+// Sync CRDT tasks back to SQLite
+export async function applyCRDTTasksToSQLite(
+  crdtTasks: Task[],
+): Promise<{ added: number; updated: number }> {
+  if (!db) throw new Error("DB not initialized");
+
+  console.log(`🔄 Applying ${crdtTasks.length} CRDT tasks to SQLite...`);
+
+  // Get all assignees for name resolution
+  const assigneeResult = execQuery("SELECT id, name FROM assignees");
+  const assigneeMap = new Map<string, number>();
+  for (const row of assigneeResult.values) {
+    assigneeMap.set(row[1], row[0]);
+  }
+
+  // Get existing task IDs for stats
+  const existingTaskIdsResult = execQuery("SELECT id FROM tasks");
+  const existingTaskIds = new Set(
+    existingTaskIdsResult.values.map((r) => r[0]),
+  );
+
+  let added = 0;
+  let updated = 0;
+
+  runSql("BEGIN TRANSACTION");
+  try {
+    for (const task of crdtTasks) {
+      if (!task.id) continue;
+
+      // Resolve assignee_id by name if possible
+      let resolvedAssigneeId = task.assignee_id;
+      if (!resolvedAssigneeId && task.assignee?.name) {
+        resolvedAssigneeId = assigneeMap.get(task.assignee.name) || null;
+      }
+
+      if (existingTaskIds.has(task.id)) {
+        updated++;
+      } else {
+        added++;
+      }
+
+      // Use REPLACE INTO to update-or-insert
+      runSql(
+        `
+				REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`,
+        [
+          task.id,
+          task.title,
+          task.project || "",
+          task.duration_minutes || 0,
+          task.date,
+          task.status,
+          task.category || "อื่นๆ",
+          task.notes || "",
+          resolvedAssigneeId,
+          task.sprint_id,
+          task.is_archived ? 1 : 0,
+          task.updated_at || new Date().toISOString(),
+        ],
+      );
+    }
+    runSql("COMMIT");
+    saveDatabase();
+    console.log(`✅ Applied CRDT tasks: ${added} added, ${updated} updated`);
+    return { added, updated };
+  } catch (e) {
+    runSql("ROLLBACK");
+    console.error("❌ applyCRDTTasksToSQLite failed:", e);
+    throw e;
+  }
+}
+
 export async function deleteTask(id: number): Promise<void> {
   if (!db) throw new Error("DB not initialized");
 

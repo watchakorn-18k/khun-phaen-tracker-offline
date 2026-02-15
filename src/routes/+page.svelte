@@ -17,7 +17,7 @@
 	import { List, CalendarDays, Columns3, Table, GanttChart, Filter, Search, Plus, Users, Folder, Sparkles, MessageSquareQuote, Settings2, Flag, FileText, FileSpreadsheet, Image as ImageIcon, Video, Presentation, CheckCircle, Moon, Sun, Bookmark, Play } from 'lucide-svelte';
 	import { initWasmSearch, indexTasks, performSearch, clearSearch, searchQuery, wasmReady, wasmLoading } from '$lib/stores/search';
 	import { compressionReady, compressionStats, getStorageInfo } from '$lib/stores/storage';
-	import { enableAutoImport, setMergeCallback, scheduleHostRealtimeSync } from '$lib/stores/server-sync';
+	import { enableAutoImport, setMergeCallback, scheduleRealtimeSync } from '$lib/stores/server-sync';
 	import { Zap } from 'lucide-svelte';
 	import ServerSyncPanel from '$lib/components/ServerSyncPanel.svelte';
 	import { tabSettings, type TabId } from '$lib/stores/tabSettings';
@@ -136,7 +136,7 @@
 		try {
 			await updateTask(taskToStart.id, { status: 'in-progress' });
 			await loadData();
-			queueHostRealtimeSync('update-task-status');
+			queueRealtimeSync('update-task-status');
 			showMessage(`Started timer for: ${taskToStart.title}`);
 		} catch (error) {
 			console.error('Failed to start timer from command palette:', error);
@@ -796,7 +796,7 @@
 			});
 			await loadData();
 			showMessage($_('page__add_worker_success'));
-			queueHostRealtimeSync('add-worker');
+			queueRealtimeSync('add-worker');
 		} catch (e) {
 			showMessage($_('page__add_worker_error'), 'error');
 		}
@@ -811,7 +811,7 @@
 			});
 			await loadData();
 			showMessage($_('page__update_worker_success'));
-			queueHostRealtimeSync('update-worker');
+			queueRealtimeSync('update-worker');
 		} catch (e) {
 			showMessage($_('page__update_worker_error'), 'error');
 		}
@@ -822,7 +822,7 @@
 			await deleteAssignee(event.detail);
 			await loadData();
 			showMessage($_('page__delete_worker_success'));
-			queueHostRealtimeSync('delete-worker');
+			queueRealtimeSync('delete-worker');
 		} catch (e) {
 			showMessage($_('page__delete_worker_error'), 'error');
 		}
@@ -837,7 +837,7 @@
 			});
 			await loadData();
 			showMessage($_('page__add_project_success'));
-			queueHostRealtimeSync('add-project');
+			queueRealtimeSync('add-project');
 		} catch (e) {
 			showMessage($_('page__add_project_error'), 'error');
 		}
@@ -851,7 +851,7 @@
 			});
 			await loadData();
 			showMessage($_('page__update_project_success'));
-			queueHostRealtimeSync('update-project');
+			queueRealtimeSync('update-project');
 		} catch (e) {
 			showMessage($_('page__update_project_error'), 'error');
 		}
@@ -862,7 +862,7 @@
 			await deleteProject(event.detail);
 			await loadData();
 			showMessage($_('page__delete_project_success'));
-			queueHostRealtimeSync('delete-project');
+			queueRealtimeSync('delete-project');
 		} catch (e) {
 			showMessage($_('page__delete_project_error'), 'error');
 		}
@@ -874,10 +874,10 @@
 		setTimeout(() => message = '', 3000);
 	}
 
-	function queueHostRealtimeSync(reason: string) {
-		const queued = scheduleHostRealtimeSync(reason);
+	function queueRealtimeSync(reason: string) {
+		const queued = scheduleRealtimeSync(reason);
 		if (queued) {
-			console.log(`⚡ Queued host realtime sync: ${reason}`);
+			console.log(`⚡ Queued realtime sync: ${reason}`);
 		}
 	}
 
@@ -929,7 +929,7 @@
 			
 			await loadData();
 			showMessage($_('page__complete_sprint_success', { values: { archived: archivedCount, incomplete: incompleteTasks.length } }));
-			queueHostRealtimeSync('complete-sprint');
+			queueRealtimeSync('complete-sprint');
 			return true;
 		} catch (e) {
 			showMessage($_('page__complete_sprint_error'), 'error');
@@ -956,7 +956,7 @@
 			} else {
 				showMessage($_('page__move_tasks_to_sprint_success', { values: { count: movedCount } }));
 			}
-			queueHostRealtimeSync('move-tasks-to-sprint');
+			queueRealtimeSync('move-tasks-to-sprint');
 		} catch (e) {
 			await loadData();
 			showMessage($_('page__move_tasks_error'), 'error');
@@ -998,7 +998,7 @@
 			}
 			await loadData();
 			showForm = false;
-			queueHostRealtimeSync(isEditing ? 'update-task' : 'add-task');
+			queueRealtimeSync(isEditing ? 'update-task' : 'add-task');
 		} catch (e) {
 			console.error('❌ handleAddTask failed:', e);
 			showMessage($_('page__add_task_error'), 'error');
@@ -1010,7 +1010,7 @@
 			await addAssigneeDB({ name: event.detail.name, color: event.detail.color });
 			assignees = await getAssignees();
 			showMessage($_('page__add_assignee_success'));
-			queueHostRealtimeSync('add-assignee');
+			queueRealtimeSync('add-assignee');
 		} catch (e) {
 			showMessage($_('page__add_assignee_error'), 'error');
 		}
@@ -1023,7 +1023,7 @@
 			await deleteTask(id);
 			await loadData();
 			showMessage($_('page__delete_task_success'));
-			queueHostRealtimeSync('delete-task');
+			queueRealtimeSync('delete-task');
 		} catch (e) {
 			showMessage($_('page__delete_task_error'), 'error');
 		}
@@ -1047,7 +1047,7 @@
 				showMessage($_('page__delete_tasks_error', { values: { count: deletedCount, failed: failedCount } }), 'error');
 			}
 			if (deletedCount > 0) {
-				queueHostRealtimeSync('delete-selected-tasks');
+				queueRealtimeSync('delete-selected-tasks');
 			}
 		} catch (e) {
 			showMessage($_('page__delete_tasks_error'), 'error');
@@ -1075,7 +1075,7 @@
 		try {
 			await updateTask(event.detail.id, { status: event.detail.status });
 			await loadData();
-			queueHostRealtimeSync('update-task-status');
+			queueRealtimeSync('update-task-status');
 		} catch (e) {
 			showMessage('เกิดข้อผิดพลาด', 'error');
 		}
@@ -3023,7 +3023,7 @@
 			
 			const actualAdded = afterStats.total - beforeStats.total;
 			showMessage($_('page__import_success', { values: { tasks: result.tasks, added: actualAdded, projects: result.projects, assignees: result.assignees, sprints: result.sprints } }));
-			queueHostRealtimeSync('import-csv');
+			queueRealtimeSync('import-csv');
 		} catch (e) {
 			console.error('❌ Import error:', e);
 			showMessage($_('page__import_error') + ': ' + (e instanceof Error ? e.message : 'Unknown error'), 'error');
