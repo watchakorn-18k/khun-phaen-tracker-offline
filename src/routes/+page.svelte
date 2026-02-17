@@ -3439,6 +3439,7 @@
 						bind:value={filters.status}
 						options={[
 							{ value: 'all', label: $_('page__filter_status_all') },
+							{ value: 'today', label: $_('page__filter_status_today'), badge: true, badgeColor: 'bg-indigo-500' },
 							{ value: 'todo', label: $_('page__filter_status_todo'), badge: true, badgeColor: 'bg-gray-400' },
 							{ value: 'in-progress', label: $_('page__filter_status_in_progress'), badge: true, badgeColor: 'bg-blue-500' },
 							{ value: 'in-test', label: $_('page__filter_status_in_test'), badge: true, badgeColor: 'bg-purple-500' },

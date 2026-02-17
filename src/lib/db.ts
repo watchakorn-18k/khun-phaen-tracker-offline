@@ -783,7 +783,10 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
     query += ` AND t.date <= ?`;
     params.push(filter.endDate);
   }
-  if (
+  if (filter?.status === "today") {
+    // Show incomplete tasks + done tasks updated today
+    query += ` AND (t.status != 'done' OR (t.status = 'done' AND DATE(t.updated_at, 'localtime') = DATE('now', 'localtime')))`;
+  } else if (
     filter?.status &&
     filter.status !== "all" &&
     filter.status !== "archived"

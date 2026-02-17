@@ -72,15 +72,23 @@ function evaluateSelect(sql: string, bind: any[]): Row[] {
 		let i = 0;
 		let rows = [...state.tasks];
 
-		if (n.includes('and t.date >= ?')) rows = rows.filter((r) => String(r.date) >= String(bind[i++]));
-		if (n.includes('and t.date <= ?')) rows = rows.filter((r) => String(r.date) <= String(bind[i++]));
-		if (n.includes('and t.status = ?')) rows = rows.filter((r) => String(r.status) === String(bind[i++]));
-		if (n.includes('and t.category = ?')) rows = rows.filter((r) => String(r.category) === String(bind[i++]));
-		if (n.includes('and t.project = ?')) rows = rows.filter((r) => String(r.project) === String(bind[i++]));
+		if (n.includes('and t.date >= ?')) { const v = bind[i++]; rows = rows.filter((r) => String(r.date) >= String(v)); }
+		if (n.includes('and t.date <= ?')) { const v = bind[i++]; rows = rows.filter((r) => String(r.date) <= String(v)); }
+		if (n.includes("t.status != 'done' or (t.status = 'done' and date(t.updated_at")) {
+			const todayStr = new Date().toISOString().split('T')[0];
+			rows = rows.filter((r) => {
+				if (String(r.status) !== 'done') return true;
+				const upd = String(r.updated_at || '');
+				const updDate = upd.includes('T') ? upd.split('T')[0] : upd.split(' ')[0];
+				return updDate === todayStr;
+			});
+		} else if (n.includes('and t.status = ?')) { const v = bind[i++]; rows = rows.filter((r) => String(r.status) === String(v)); }
+		if (n.includes('and t.category = ?')) { const v = bind[i++]; rows = rows.filter((r) => String(r.category) === String(v)); }
+		if (n.includes('and t.project = ?')) { const v = bind[i++]; rows = rows.filter((r) => String(r.project) === String(v)); }
 		if (n.includes('and t.assignee_id is null')) rows = rows.filter((r) => r.assignee_id == null);
-		else if (n.includes('and t.assignee_id = ?')) rows = rows.filter((r) => Number(r.assignee_id) === Number(bind[i++]));
+		else if (n.includes('and t.assignee_id = ?')) { const v = bind[i++]; rows = rows.filter((r) => Number(r.assignee_id) === Number(v)); }
 		if (n.includes('and t.sprint_id is null')) rows = rows.filter((r) => r.sprint_id == null);
-		else if (n.includes('and t.sprint_id = ?')) rows = rows.filter((r) => Number(r.sprint_id) === Number(bind[i++]));
+		else if (n.includes('and t.sprint_id = ?')) { const v = bind[i++]; rows = rows.filter((r) => Number(r.sprint_id) === Number(v)); }
 		if (n.includes('and t.is_archived = 1')) rows = rows.filter((r) => Number(r.is_archived || 0) === 1);
 		else if (n.includes('and t.is_archived = 0')) rows = rows.filter((r) => Number(r.is_archived || 0) === 0);
 		if (n.includes('lower(t.title) like lower(?)')) {

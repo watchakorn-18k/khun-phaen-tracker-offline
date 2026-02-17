@@ -48,7 +48,7 @@ export type ViewMode = "list" | "calendar" | "kanban" | "table" | "gantt";
 export interface FilterOptions {
   startDate?: string;
   endDate?: string;
-  status?: Task["status"] | "all" | "archived" | "active";
+  status?: Task["status"] | "all" | "archived" | "active" | "today";
   category?: string | "all";
   project?: string | "all";
   assignee_id?: number | "all" | null;

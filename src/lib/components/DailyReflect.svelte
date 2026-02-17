@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { _ } from '$lib/i18n';
-	import { CheckCircle2, Clock, ClipboardCopy, RefreshCcw, X, Sparkles, MessageSquareQuote, Settings, Send, Save, AlertCircle } from 'lucide-svelte';
+	import { CheckCircle2, Clock, ClipboardCopy, RefreshCcw, X, MessageSquareQuote, Settings, Send, Save, AlertCircle } from 'lucide-svelte';
 	import { fade, scale, fly, slide } from 'svelte/transition';
 	import logoUrl from '$lib/assets/logo.png';
 	import { timeLogs, formatDuration } from '$lib/stores/timeLogs';
@@ -11,6 +11,8 @@
 	export let show = false;
 
 	let todayTasks: Task[] = [];
+	let doneTodayTasks: Task[] = [];
+	let pendingTasks: Task[] = [];
 	let generatedText = '';
 	let isLoading = false;
 	let copied = false;
@@ -22,26 +24,31 @@
 	let sendSuccess = false;
 	let sendError = '';
 
-	// Variety of template keys
-	const templateKeys = [
-		'dailyReflect__temp1',
-		'dailyReflect__temp2',
-		'dailyReflect__temp3',
-		'dailyReflect__temp4',
-		'dailyReflect__temp5'
-	];
-
 	async function loadTodayData() {
 		isLoading = true;
-		const now = new Date();
-		// Get UTC timestamp for 24 hours ago in format YYYY-MM-DD HH:MM:SS
-		const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-		const updatedAtStart = twentyFourHoursAgo.toISOString();
-		
+
 		try {
-			// Get tasks that were marked as 'done' within the last 24 hours
-			const tasks = await getTasks({ status: 'done', updatedAtStart });
-			todayTasks = tasks;
+			// Get all non-archived tasks
+			const allTasks = await getTasks({});
+
+			// Today's date string for comparison (YYYY-MM-DD)
+			const now = new Date();
+			const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+			// Split into: pending (not done) and done today (updated_at = today)
+			pendingTasks = allTasks.filter(t => t.status !== 'done');
+			doneTodayTasks = allTasks.filter(t => {
+				if (t.status !== 'done') return false;
+				if (t.updated_at) {
+					const updatedDate = t.updated_at.includes('T')
+						? t.updated_at.split('T')[0]
+						: t.updated_at.split(' ')[0];
+					return updatedDate === todayStr;
+				}
+				return false;
+			});
+
+			todayTasks = [...pendingTasks, ...doneTodayTasks];
 			generate();
 		} catch (error) {
 			console.error('Failed to load today data:', error);
@@ -50,42 +57,54 @@
 		}
 	}
 
+	const statusIcons: Record<string, string> = {
+		'done': '✅',
+		'todo': '📝',
+		'in-progress': '🔄',
+		'in-test': '🧪'
+	};
+
+	function formatTaskLine(t: Task): string {
+		const icon = statusIcons[t.status] || '📌';
+		let str = `${icon} ${t.title}`;
+		if (t.assignee?.name) {
+			str += ` ${$_('dailyReflect__assignee_prefix')} ${t.assignee.name}`;
+		}
+		if (t.category && t.category !== 'อื่นๆ' && t.category !== 'Other' && t.category !== 'อื่นๆ (Other)') {
+			str += ` - ${t.category}`;
+		}
+		if (t.status === 'done' && t.updated_at) {
+			const date = new Date(t.updated_at.includes('T') ? t.updated_at : t.updated_at + 'Z');
+			const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+			str += ` [${timeStr}]`;
+		}
+		return str;
+	}
+
 	function generate() {
 		if (todayTasks.length === 0) {
 			generatedText = '';
 			return;
 		}
 
-		const assigneePrefix = $_('dailyReflect__assignee_prefix');
-		const taskStrings = todayTasks.map(t => {
-			let str = `✅ ${t.title}`;
-			if (t.assignee?.name) {
-				str += ` ${assigneePrefix} ${t.assignee.name}`;
-			}
-			if (t.category && t.category !== 'อื่นๆ' && t.category !== 'Other' && t.category !== 'อื่นๆ (Other)') {
-				str += ` - ${t.category}`;
-			}
-			if (t.updated_at) {
-				// Format the update time clearly (only time as requested)
-				const date = new Date(t.updated_at.includes('T') ? t.updated_at : t.updated_at + 'Z');
-				const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-				str += ` [${timeStr}]`;
-			}
-			return str;
-		});
+		const lines: string[] = [];
+		const date = new Date().toLocaleDateString();
 
-		const randomIndex = Math.floor(Math.random() * templateKeys.length);
-		const key = templateKeys[randomIndex];
-		
-		const values = {
-			tasks: taskStrings.join(', '),
-			bulletTasks: taskStrings.map(t => `• ${t}`).join('\n'),
-			tasksList: taskStrings.join('\n- '),
-			count: todayTasks.length,
-			date: new Date().toLocaleDateString()
-		};
+		lines.push(`📊 ${$_('dailyReflect__title')} - ${date}`);
 
-		generatedText = $_(key, { values });
+		if (doneTodayTasks.length > 0) {
+			lines.push('');
+			lines.push(`🎯 ${$_('dailyReflect__completed_today_section')} (${doneTodayTasks.length})`);
+			doneTodayTasks.forEach(t => lines.push(`• ${formatTaskLine(t)}`));
+		}
+
+		if (pendingTasks.length > 0) {
+			lines.push('');
+			lines.push(`⏳ ${$_('dailyReflect__pending_section')} (${pendingTasks.length})`);
+			pendingTasks.forEach(t => lines.push(`• ${formatTaskLine(t)}`));
+		}
+
+		generatedText = lines.join('\n');
 	}
 
 	function copyToClipboard() {
@@ -123,7 +142,9 @@
 				if (t.assignee?.discord_id && t.title) {
 					// Find the task line and append mention at the end of it
 					const escapedTitle = t.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-					const taskLineRegex = new RegExp(`(✅\\s*${escapedTitle}[^\\n]*)`);
+					const icon = statusIcons[t.status] || '📌';
+					const escapedIcon = icon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+					const taskLineRegex = new RegExp(`(${escapedIcon}\\s*${escapedTitle}[^\\n]*)`);
 					discordText = discordText.replace(taskLineRegex, `$1 <@${t.assignee.discord_id}>`);
 				}
 			}
@@ -138,7 +159,7 @@
 				fields: [
 					{
 						name: "📊 Statistics",
-						value: `Total Tasks: **${todayTasks.length}**`,
+						value: `✅ ${$_('dailyReflect__completed_today_section')}: **${doneTodayTasks.length}**\n⏳ ${$_('dailyReflect__pending_section')}: **${pendingTasks.length}**`,
 						inline: true
 					},
 					{
@@ -277,15 +298,27 @@
 					</div>
 				{:else}
 					<div class="space-y-6" in:fly={{ y: 20, duration: 400 }}>
-						<!-- Stats Summary Card (Task count only) -->
-						<div class="w-full group p-6 bg-linear-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/10 dark:to-teal-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 transition-all hover:shadow-lg hover:shadow-emerald-500/5">
-							<div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
-								<CheckCircle2 size={20} />
-								<span class="text-xs font-bold uppercase tracking-[0.2em]">{$_('dailyReflect__tasks_section')}</span>
+						<!-- Stats Summary Cards -->
+						<div class="grid grid-cols-2 gap-3">
+							<div class="group p-4 bg-linear-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/10 dark:to-teal-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 transition-all hover:shadow-lg hover:shadow-emerald-500/5">
+								<div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-1">
+									<CheckCircle2 size={16} />
+									<span class="text-[10px] font-bold uppercase tracking-[0.15em]">{$_('dailyReflect__completed_today_section')}</span>
+								</div>
+								<div class="flex items-baseline gap-1">
+									<p class="text-3xl font-black text-emerald-700 dark:text-emerald-300">{doneTodayTasks.length}</p>
+									<span class="text-xs text-emerald-600/60 font-medium">{$_('dailyReflect__tasks_unit')}</span>
+								</div>
 							</div>
-							<div class="flex items-baseline gap-2">
-								<p class="text-4xl font-black text-emerald-700 dark:text-emerald-300">{todayTasks.length}</p>
-								<span class="text-sm text-emerald-600/60 font-medium">{$_('dailyReflect__tasks_unit')}</span>
+							<div class="group p-4 bg-linear-to-br from-amber-50 to-orange-50 dark:from-amber-500/10 dark:to-orange-500/10 rounded-2xl border border-amber-100 dark:border-amber-500/20 transition-all hover:shadow-lg hover:shadow-amber-500/5">
+								<div class="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-1">
+									<Clock size={16} />
+									<span class="text-[10px] font-bold uppercase tracking-[0.15em]">{$_('dailyReflect__pending_section')}</span>
+								</div>
+								<div class="flex items-baseline gap-1">
+									<p class="text-3xl font-black text-amber-700 dark:text-amber-300">{pendingTasks.length}</p>
+									<span class="text-xs text-amber-600/60 font-medium">{$_('dailyReflect__pending_unit')}</span>
+								</div>
 							</div>
 						</div>
 
@@ -315,10 +348,10 @@
 							<div class="relative group">
 								<div class="absolute -inset-0.5 bg-linear-to-r from-primary/20 to-secondary/20 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-500"></div>
 								<div class="relative">
-									<textarea 
+									<textarea
 										bind:value={generatedText}
 										readonly
-										rows="6"
+										rows="10"
 										class="w-full p-5 bg-gray-50/80 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-800 dark:text-gray-200 font-medium leading-relaxed resize-none focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all shadow-inner"
 									></textarea>
 									
