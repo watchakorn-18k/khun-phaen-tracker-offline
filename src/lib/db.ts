@@ -298,22 +298,35 @@ function ensureUpdatedAtColumn(): boolean {
 
   try {
     const columns = db.selectObjects("PRAGMA table_info(tasks)");
-    hasUpdatedAtColumn = columns.some(
+    const exists = columns.some(
       (col: Record<string, any>) => col.name === "updated_at",
     );
 
-    if (!hasUpdatedAtColumn) {
-      console.log("🔄 Adding updated_at column...");
-      runSql(
-        `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-      );
+    if (exists) {
       hasUpdatedAtColumn = true;
-      console.log("✅ Added updated_at column");
       return true;
+    }
+
+    // Column doesn't exist, try to add it
+    console.log("🔄 Adding updated_at column...");
+    runSql(
+      `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+    );
+
+    // Verify the column was actually added
+    const verifyColumns = db.selectObjects("PRAGMA table_info(tasks)");
+    hasUpdatedAtColumn = verifyColumns.some(
+      (col: Record<string, any>) => col.name === "updated_at",
+    );
+    if (hasUpdatedAtColumn) {
+      console.log("✅ Added updated_at column");
+    } else {
+      console.warn("⚠️ ALTER TABLE ran but column not found");
     }
     return hasUpdatedAtColumn;
   } catch (e) {
-    // If PRAGMA fails, assume column doesn't exist and try to add it
+    console.warn("⚠️ ensureUpdatedAtColumn failed:", e);
+    // Try ALTER TABLE as fallback
     try {
       runSql(
         `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
@@ -322,7 +335,13 @@ function ensureUpdatedAtColumn(): boolean {
       console.log("✅ Added updated_at column (fallback)");
       return true;
     } catch (e2) {
+      // Check if column exists despite errors (e.g. "duplicate column" means it's there)
+      if (String(e2).includes("duplicate column")) {
+        hasUpdatedAtColumn = true;
+        return true;
+      }
       hasUpdatedAtColumn = false;
+      console.warn("⚠️ Could not add updated_at column:", e2);
       return false;
     }
   }
@@ -680,7 +699,7 @@ export async function applyCRDTTasksToSQLite(
   if (!db) throw new Error("DB not initialized");
 
   // Ensure updated_at column exists before using it in REPLACE INTO
-  ensureUpdatedAtColumn();
+  const hasUpdatedAt = ensureUpdatedAtColumn();
 
   console.log(`🔄 Applying ${crdtTasks.length} CRDT tasks to SQLite...`);
 
@@ -700,6 +719,13 @@ export async function applyCRDTTasksToSQLite(
   let added = 0;
   let updated = 0;
 
+  const columns = hasUpdatedAt
+    ? "id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, updated_at"
+    : "id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived";
+  const placeholders = hasUpdatedAt
+    ? "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+    : "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+
   runSql("BEGIN TRANSACTION");
   try {
     for (const task of crdtTasks) {
@@ -717,26 +743,27 @@ export async function applyCRDTTasksToSQLite(
         added++;
       }
 
+      const values: any[] = [
+        task.id,
+        task.title,
+        task.project || "",
+        task.duration_minutes || 0,
+        task.date,
+        task.status,
+        task.category || "อื่นๆ",
+        task.notes || "",
+        resolvedAssigneeId,
+        task.sprint_id,
+        task.is_archived ? 1 : 0,
+      ];
+      if (hasUpdatedAt) {
+        values.push(task.updated_at || new Date().toISOString());
+      }
+
       // Use REPLACE INTO to update-or-insert
       runSql(
-        `
-				REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`,
-        [
-          task.id,
-          task.title,
-          task.project || "",
-          task.duration_minutes || 0,
-          task.date,
-          task.status,
-          task.category || "อื่นๆ",
-          task.notes || "",
-          resolvedAssigneeId,
-          task.sprint_id,
-          task.is_archived ? 1 : 0,
-          task.updated_at || new Date().toISOString(),
-        ],
+        `REPLACE INTO tasks (${columns}) VALUES (${placeholders})`,
+        values,
       );
     }
     runSql("COMMIT");
@@ -764,10 +791,10 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
   if (!db) throw new Error("DB not initialized");
 
   // Ensure updated_at column exists before querying it
-  ensureUpdatedAtColumn();
+  const hasUpdatedAt = ensureUpdatedAtColumn();
 
   let query = `
-		SELECT 
+		SELECT
 			t.*,
 			a.id as a_id,
 			a.name as a_name,
@@ -790,8 +817,13 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
     params.push(filter.endDate);
   }
   if (filter?.status === "today") {
-    // Show incomplete tasks + done tasks updated today
-    query += ` AND (t.status != 'done' OR (t.status = 'done' AND DATE(t.updated_at, 'localtime') = DATE('now', 'localtime')))`;
+    if (hasUpdatedAt) {
+      // Show incomplete tasks + done tasks updated today
+      query += ` AND (t.status != 'done' OR (t.status = 'done' AND DATE(t.updated_at, 'localtime') = DATE('now', 'localtime')))`;
+    } else {
+      // Fallback: show all non-done tasks when updated_at column is unavailable
+      query += ` AND t.status != 'done'`;
+    }
   } else if (
     filter?.status &&
     filter.status !== "all" &&
@@ -835,7 +867,7 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
     query += ` AND (LOWER(t.title) LIKE LOWER(?) OR LOWER(t.notes) LIKE LOWER(?))`;
     params.push(`%${filter.search}%`, `%${filter.search}%`);
   }
-  if (filter?.updatedAtStart) {
+  if (filter?.updatedAtStart && hasUpdatedAt) {
     query += ` AND DATETIME(t.updated_at) >= DATETIME(?)`;
     params.push(filter.updatedAtStart);
   }
