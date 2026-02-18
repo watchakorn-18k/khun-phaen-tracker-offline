@@ -296,29 +296,43 @@ function ensureUpdatedAtColumn(): boolean {
   // Return cached result if already checked
   if (hasUpdatedAtColumn !== null) return hasUpdatedAtColumn;
 
-  try {
+  const hasColumn = (): boolean => {
     const columns = db.selectObjects("PRAGMA table_info(tasks)");
-    const exists = columns.some(
-      (col: Record<string, any>) => col.name === "updated_at",
+    return columns.some((col: Record<string, any>) => col.name === "updated_at");
+  };
+
+  const backfillUpdatedAt = (): void => {
+    // Keep historical values when present, otherwise seed from created_at.
+    runSql(
+      `UPDATE tasks
+       SET updated_at = COALESCE(NULLIF(updated_at, ''), created_at, CURRENT_TIMESTAMP)
+       WHERE updated_at IS NULL OR TRIM(CAST(updated_at AS TEXT)) = ''`,
     );
+  };
+
+  try {
+    const exists = hasColumn();
 
     if (exists) {
+      // Older DBs may have nullable updated_at; backfill once.
+      try {
+        backfillUpdatedAt();
+      } catch (e) {
+        console.warn("⚠️ Failed to backfill updated_at values:", e);
+      }
       hasUpdatedAtColumn = true;
       return true;
     }
 
     // Column doesn't exist, try to add it
     console.log("🔄 Adding updated_at column...");
-    runSql(
-      `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-    );
+    // SQLite ALTER TABLE does not allow non-constant defaults like CURRENT_TIMESTAMP.
+    runSql(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP`);
 
     // Verify the column was actually added
-    const verifyColumns = db.selectObjects("PRAGMA table_info(tasks)");
-    hasUpdatedAtColumn = verifyColumns.some(
-      (col: Record<string, any>) => col.name === "updated_at",
-    );
+    hasUpdatedAtColumn = hasColumn();
     if (hasUpdatedAtColumn) {
+      backfillUpdatedAt();
       console.log("✅ Added updated_at column");
     } else {
       console.warn("⚠️ ALTER TABLE ran but column not found");
@@ -326,24 +340,8 @@ function ensureUpdatedAtColumn(): boolean {
     return hasUpdatedAtColumn;
   } catch (e) {
     console.warn("⚠️ ensureUpdatedAtColumn failed:", e);
-    // Try ALTER TABLE as fallback
-    try {
-      runSql(
-        `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-      );
-      hasUpdatedAtColumn = true;
-      console.log("✅ Added updated_at column (fallback)");
-      return true;
-    } catch (e2) {
-      // Check if column exists despite errors (e.g. "duplicate column" means it's there)
-      if (String(e2).includes("duplicate column")) {
-        hasUpdatedAtColumn = true;
-        return true;
-      }
-      hasUpdatedAtColumn = false;
-      console.warn("⚠️ Could not add updated_at column:", e2);
-      return false;
-    }
+    hasUpdatedAtColumn = false;
+    return false;
   }
 }
 
@@ -468,11 +466,19 @@ function createTables() {
 
   // Try to add updated_at column
   try {
-    runSql(
-      `ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-    );
+    runSql(`ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP`);
   } catch (e) {
     // Column already exists
+  }
+  // Backfill updated_at for existing rows after migration from old schemas.
+  try {
+    runSql(
+      `UPDATE tasks
+       SET updated_at = COALESCE(NULLIF(updated_at, ''), created_at, CURRENT_TIMESTAMP)
+       WHERE updated_at IS NULL OR TRIM(CAST(updated_at AS TEXT)) = ''`,
+    );
+  } catch (e) {
+    // Column may not exist yet; ensureUpdatedAtColumn() will handle it.
   }
   // Try to add end_date column
   try {
