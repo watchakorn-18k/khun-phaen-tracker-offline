@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, tick, onDestroy } from 'svelte';
 	import { marked } from 'marked';
-	import { Bold, Italic, Heading2, Link, Image, Code, List, Quote, Eye, Pencil, ZoomIn, ZoomOut, RotateCcw, X, Download } from 'lucide-svelte';
+	import { Bold, Italic, Heading2, Link, Image, Code, List, Quote, Eye, Pencil, ZoomIn, ZoomOut, RotateCcw, X, Download, Copy, RotateCw, Maximize, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	const dispatch = createEventDispatcher<{ change: string }>();
 
@@ -135,11 +135,25 @@
 	let lightboxZoom = 1;
 	let lightboxX = 0;
 	let lightboxY = 0;
+	let lightboxRotation = 0;
+	let lightboxIndex = 0;
 	let isDragging = false;
 	let dragStartX = 0;
 	let dragStartY = 0;
 	let dragStartOffsetX = 0;
 	let dragStartOffsetY = 0;
+	let copyFeedback = '';
+
+	// Extract all image URLs from markdown for navigation
+	$: imageList = (() => {
+		const regex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+		const images: { src: string; alt: string }[] = [];
+		let match;
+		while ((match = regex.exec(value)) !== null) {
+			images.push({ src: match[2], alt: match[1] || 'image' });
+		}
+		return images;
+	})();
 
 	function openLightbox(src: string, alt: string) {
 		lightboxSrc = src;
@@ -147,6 +161,11 @@
 		lightboxZoom = 1;
 		lightboxX = 0;
 		lightboxY = 0;
+		lightboxRotation = 0;
+		copyFeedback = '';
+		// Find index in imageList
+		const idx = imageList.findIndex(img => img.src === src);
+		lightboxIndex = idx >= 0 ? idx : 0;
 		lightboxOpen = true;
 	}
 
@@ -157,7 +176,78 @@
 
 	function zoomIn() { lightboxZoom = Math.min(lightboxZoom + 0.25, 5); }
 	function zoomOut() { lightboxZoom = Math.max(lightboxZoom - 0.25, 0.25); }
-	function resetZoom() { lightboxZoom = 1; lightboxX = 0; lightboxY = 0; }
+	function resetView() { lightboxZoom = 1; lightboxX = 0; lightboxY = 0; lightboxRotation = 0; }
+	function rotateRight() { lightboxRotation = (lightboxRotation + 90) % 360; }
+
+	function fitToScreen() {
+		lightboxX = 0;
+		lightboxY = 0;
+		// Fit to full viewport height
+		const img = new window.Image();
+		img.onload = () => {
+			const scaleH = (window.innerHeight * 0.9) / img.naturalHeight;
+			lightboxZoom = Math.min(scaleH, 5);
+		};
+		img.src = lightboxSrc;
+	}
+
+	function navigatePrev() {
+		if (imageList.length <= 1) return;
+		lightboxIndex = (lightboxIndex - 1 + imageList.length) % imageList.length;
+		const img = imageList[lightboxIndex];
+		lightboxSrc = img.src;
+		lightboxAlt = img.alt;
+		lightboxZoom = 1; lightboxX = 0; lightboxY = 0; lightboxRotation = 0;
+	}
+
+	function navigateNext() {
+		if (imageList.length <= 1) return;
+		lightboxIndex = (lightboxIndex + 1) % imageList.length;
+		const img = imageList[lightboxIndex];
+		lightboxSrc = img.src;
+		lightboxAlt = img.alt;
+		lightboxZoom = 1; lightboxX = 0; lightboxY = 0; lightboxRotation = 0;
+	}
+
+	function openInNewTab() {
+		window.open(lightboxSrc, '_blank', 'noopener,noreferrer');
+	}
+
+	async function copyToClipboard() {
+		try {
+			const res = await fetch(lightboxSrc);
+			const blob = await res.blob();
+			await navigator.clipboard.write([
+				new ClipboardItem({ [blob.type]: blob })
+			]);
+			copyFeedback = 'Copied!';
+			setTimeout(() => copyFeedback = '', 2000);
+		} catch {
+			// Fallback: try canvas approach for data URLs
+			try {
+				const img = new window.Image();
+				img.crossOrigin = 'anonymous';
+				img.onload = async () => {
+					const canvas = document.createElement('canvas');
+					canvas.width = img.naturalWidth;
+					canvas.height = img.naturalHeight;
+					canvas.getContext('2d')?.drawImage(img, 0, 0);
+					canvas.toBlob(async (blob) => {
+						if (!blob) return;
+						await navigator.clipboard.write([
+							new ClipboardItem({ 'image/png': blob })
+						]);
+						copyFeedback = 'Copied!';
+						setTimeout(() => copyFeedback = '', 2000);
+					}, 'image/png');
+				};
+				img.src = lightboxSrc;
+			} catch {
+				copyFeedback = 'Failed';
+				setTimeout(() => copyFeedback = '', 2000);
+			}
+		}
+	}
 
 	function handleLightboxWheel(event: WheelEvent) {
 		event.preventDefault();
@@ -193,10 +283,17 @@
 
 	function handleLightboxKeydown(event: KeyboardEvent) {
 		if (!lightboxOpen) return;
-		if (event.key === 'Escape') closeLightbox();
-		if (event.key === '+' || event.key === '=') zoomIn();
-		if (event.key === '-') zoomOut();
-		if (event.key === '0') resetZoom();
+		switch (event.key) {
+			case 'Escape': closeLightbox(); break;
+			case '+': case '=': zoomIn(); break;
+			case '-': zoomOut(); break;
+			case '0': resetView(); break;
+			case 'r': case 'R': rotateRight(); break;
+			case 'f': case 'F': fitToScreen(); break;
+			case 'ArrowLeft': navigatePrev(); break;
+			case 'ArrowRight': navigateNext(); break;
+			case 'c': case 'C': if (!event.metaKey && !event.ctrlKey) void copyToClipboard(); break;
+		}
 	}
 
 	async function downloadImage() {
@@ -300,24 +397,68 @@
 		aria-label="Image viewer"
 	>
 		<!-- Controls -->
-		<div class="absolute top-4 right-4 flex items-center gap-2 z-10">
+		<div class="absolute top-4 right-4 flex items-center gap-1.5 z-10">
 			<span class="text-white/70 text-sm font-mono bg-black/40 px-2 py-1 rounded">{Math.round(lightboxZoom * 100)}%</span>
+			{#if lightboxRotation !== 0}
+				<span class="text-white/70 text-sm font-mono bg-black/40 px-2 py-1 rounded">{lightboxRotation}°</span>
+			{/if}
+			{#if imageList.length > 1}
+				<span class="text-white/70 text-sm bg-black/40 px-2 py-1 rounded">{lightboxIndex + 1}/{imageList.length}</span>
+			{/if}
+			<div class="w-px h-5 bg-white/20"></div>
 			<button type="button" on:click={zoomIn} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Zoom in (+)">
-				<ZoomIn size={20} />
+				<ZoomIn size={18} />
 			</button>
 			<button type="button" on:click={zoomOut} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Zoom out (-)">
-				<ZoomOut size={20} />
+				<ZoomOut size={18} />
 			</button>
-			<button type="button" on:click={resetZoom} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Reset (0)">
-				<RotateCcw size={20} />
+			<button type="button" on:click={fitToScreen} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Fit to screen (F)">
+				<Maximize size={18} />
+			</button>
+			<button type="button" on:click={rotateRight} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Rotate (R)">
+				<RotateCw size={18} />
+			</button>
+			<button type="button" on:click={resetView} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Reset (0)">
+				<RotateCcw size={18} />
+			</button>
+			<div class="w-px h-5 bg-white/20"></div>
+			<button type="button" on:click={() => void copyToClipboard()} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors relative" title="Copy (C)">
+				<Copy size={18} />
+				{#if copyFeedback}
+					<span class="absolute -bottom-7 left-1/2 -translate-x-1/2 text-xs bg-green-500 text-white px-2 py-0.5 rounded whitespace-nowrap">{copyFeedback}</span>
+				{/if}
 			</button>
 			<button type="button" on:click={downloadImage} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Download">
-				<Download size={20} />
+				<Download size={18} />
 			</button>
+			<button type="button" on:click={openInNewTab} class="p-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-colors" title="Open in new tab">
+				<ExternalLink size={18} />
+			</button>
+			<div class="w-px h-5 bg-white/20"></div>
 			<button type="button" on:click={closeLightbox} class="p-2 bg-black/40 hover:bg-red-600/80 text-white rounded-lg transition-colors" title="Close (Esc)">
-				<X size={20} />
+				<X size={18} />
 			</button>
 		</div>
+
+		<!-- Navigation arrows -->
+		{#if imageList.length > 1}
+			<button
+				type="button"
+				on:click={navigatePrev}
+				class="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 hover:bg-black/60 text-white rounded-full transition-colors z-10"
+				title="Previous (←)"
+			>
+				<ChevronLeft size={24} />
+			</button>
+			<button
+				type="button"
+				on:click={navigateNext}
+				class="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 hover:bg-black/60 text-white rounded-full transition-colors z-10"
+				title="Next (→)"
+			>
+				<ChevronRight size={24} />
+			</button>
+		{/if}
 
 		<!-- Image -->
 		<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -325,7 +466,7 @@
 			src={lightboxSrc}
 			alt={lightboxAlt}
 			class="max-w-[90vw] max-h-[85vh] object-contain select-none {isDragging ? 'cursor-grabbing' : 'cursor-grab transition-transform duration-150'}"
-			style="transform: scale({lightboxZoom}) translate({lightboxX / lightboxZoom}px, {lightboxY / lightboxZoom}px);"
+			style="transform: scale({lightboxZoom}) translate({lightboxX / lightboxZoom}px, {lightboxY / lightboxZoom}px) rotate({lightboxRotation}deg);"
 			on:mousedown={handleLightboxMouseDown}
 			on:mousemove={handleLightboxMouseMove}
 			on:mouseup={handleLightboxMouseUp}
