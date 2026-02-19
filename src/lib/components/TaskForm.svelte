@@ -38,6 +38,8 @@
 	let isAddingChecklistItem = false;
 	let deletingChecklistItemId: string | null = null;
 	let checklistVisibleCount = 10;
+	let checklistSelectMode = false;
+	let selectedChecklistIds: Set<string> = new Set();
 	$: completedCount = checklist.filter(i => i.completed).length;
 	$: progress = checklist.length > 0 ? Math.round((completedCount / checklist.length) * 100) : 0;
 	$: visibleChecklist = checklist.slice(0, checklistVisibleCount);
@@ -421,6 +423,8 @@
 		newAssigneeColor = '#6366F1';
 		newChecklistItem = '';
 		checklistVisibleCount = 10;
+		checklistSelectMode = false;
+		selectedChecklistIds = new Set();
 		showBranchDialog = false;
 	}
 
@@ -759,15 +763,61 @@
 							<span class="text-sm font-bold text-gray-900 dark:text-white">{$_('taskForm__checklist_label')}</span>
 						</div>
 						{#if checklist.length > 0}
-							<button 
-								type="button"
-								on:click={() => checklist = []}
-								class="px-3 py-1 text-xs font-medium text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-							>
-								Delete
-							</button>
+							<div class="flex items-center gap-1">
+								<button 
+									type="button"
+									on:click={() => {
+										checklistSelectMode = !checklistSelectMode;
+										if (!checklistSelectMode) selectedChecklistIds = new Set();
+									}}
+									class="px-2.5 py-1 text-xs font-medium rounded transition-colors {checklistSelectMode ? 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800'}"
+								>
+									{checklistSelectMode ? 'Done' : 'Select'}
+								</button>
+								<button 
+									type="button"
+									on:click={() => { checklist = []; selectedChecklistIds = new Set(); checklistSelectMode = false; if (editingTask) dispatch('checklistUpdate', { checklist }); }}
+									class="px-2.5 py-1 text-xs font-medium text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+								>
+									Delete All
+								</button>
+							</div>
 						{/if}
 					</div>
+
+					{#if checklistSelectMode && checklist.length > 0}
+						<div class="flex items-center gap-2 py-1 px-1 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+							<button
+								type="button"
+								on:click={() => {
+									if (selectedChecklistIds.size === checklist.length) {
+										selectedChecklistIds = new Set();
+									} else {
+										selectedChecklistIds = new Set(checklist.map(i => i.id));
+									}
+								}}
+								class="px-2.5 py-1 text-xs font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+							>
+								{selectedChecklistIds.size === checklist.length ? 'Deselect All' : 'Select All'}
+							</button>
+							{#if selectedChecklistIds.size > 0}
+								<button
+									type="button"
+									on:click={() => {
+										checklist = checklist.filter(i => !selectedChecklistIds.has(i.id));
+										selectedChecklistIds = new Set();
+										if (checklist.length === 0) checklistSelectMode = false;
+										if (editingTask) dispatch('checklistUpdate', { checklist });
+									}}
+									class="px-2.5 py-1 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors flex items-center gap-1"
+								>
+									<Trash2 size={12} />
+									Delete {selectedChecklistIds.size} items
+								</button>
+							{/if}
+							<span class="text-xs text-gray-400 ml-auto">{selectedChecklistIds.size}/{checklist.length}</span>
+						</div>
+					{/if}
 
 					<div class="space-y-2">
 						<div class="flex items-center gap-3">
@@ -783,16 +833,32 @@
 
 					<div class="space-y-1">
 						{#each visibleChecklist as item (item.id)}
-							<div class="flex items-start gap-2 group py-1">
-								<button 
-									type="button"
-									on:click={() => toggleChecklistItem(item.id)}
-									class="mt-0.5 w-5 h-5 flex items-center justify-center rounded border border-gray-300 dark:border-gray-600 hover:border-primary transition-colors flex-shrink-0"
-								>
-									{#if item.completed}
-										<Check size={14} strokeWidth={3} class="text-primary" />
-									{/if}
-								</button>
+							<div class="flex items-start gap-2 group py-1 {checklistSelectMode && selectedChecklistIds.has(item.id) ? 'bg-blue-50/50 dark:bg-blue-900/10 -mx-2 px-2 rounded' : ''}">
+								{#if checklistSelectMode}
+									<button
+										type="button"
+										on:click={() => {
+											const next = new Set(selectedChecklistIds);
+											if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+											selectedChecklistIds = next;
+										}}
+										class="mt-0.5 w-5 h-5 flex items-center justify-center rounded border transition-colors flex-shrink-0 {selectedChecklistIds.has(item.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'}"
+									>
+										{#if selectedChecklistIds.has(item.id)}
+											<Check size={14} strokeWidth={3} class="text-white" />
+										{/if}
+									</button>
+								{:else}
+									<button 
+										type="button"
+										on:click={() => toggleChecklistItem(item.id)}
+										class="mt-0.5 w-5 h-5 flex items-center justify-center rounded border border-gray-300 dark:border-gray-600 hover:border-primary transition-colors flex-shrink-0"
+									>
+										{#if item.completed}
+											<Check size={14} strokeWidth={3} class="text-primary" />
+										{/if}
+									</button>
+								{/if}
 								<div class="flex-1 min-w-0">
 									<input 
 										type="text"
