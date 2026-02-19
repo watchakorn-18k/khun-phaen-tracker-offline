@@ -1045,6 +1045,39 @@
 			showMessage($_('page__add_task_error'), 'error');
 		}
 	}
+
+	async function handleChecklistUpdate(event: CustomEvent<{ checklist: ChecklistItem[] }>) {
+		if (!editingTask) return;
+		try {
+			await updateTask(editingTask.id!, { checklist: event.detail.checklist });
+			// Update editingTask reference so state stays in sync without re-initializing the form
+			editingTask = { ...editingTask, checklist: event.detail.checklist };
+			await loadData(); // Refresh tasks to update progress in other views
+			queueRealtimeSync('update-checklist');
+		} catch (e) {
+			console.error('❌ handleChecklistUpdate failed:', e);
+		}
+	}
+
+	async function handleChecklistToggle(event: CustomEvent<{ taskId: number; checklistItemId: string }>) {
+		const { taskId, checklistItemId } = event.detail;
+		try {
+			// Find the task
+			const task = tasks.find(t => t.id === taskId);
+			if (!task || !task.checklist) return;
+
+			// Toggle the checklist item
+			const updatedChecklist = task.checklist.map(item =>
+				item.id === checklistItemId ? { ...item, completed: !item.completed } : item
+			);
+
+			await updateTask(taskId, { checklist: updatedChecklist });
+			await loadData();
+			queueRealtimeSync('toggle-checklist');
+		} catch (e) {
+			console.error('❌ handleChecklistToggle failed:', e);
+		}
+	}
 	
 	async function handleAddAssignee(event: CustomEvent<{ name: string; color: string }>) {
 		try {
@@ -3606,6 +3639,7 @@
 		on:submit={handleAddTask}
 		on:close={cancelEdit}
 		on:addAssignee={handleAddAssignee}
+		on:checklistUpdate={handleChecklistUpdate}
 	/>
 	
 	<!-- Views -->
@@ -3640,6 +3674,7 @@
 				on:delete={handleDeleteTask}
 				on:deleteSelected={handleDeleteSelectedTasks}
 				on:statusChange={handleStatusChange}
+				on:checklistToggle={handleChecklistToggle}
 				on:exportQR={handleExportQR}
 			/>
 		{:else if currentView === 'gantt'}

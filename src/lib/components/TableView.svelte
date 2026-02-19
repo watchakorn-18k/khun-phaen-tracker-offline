@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { _ } from '$lib/i18n';
 	import type { Task, Sprint } from '$lib/types';
-	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp, Flag, X, QrCode, FlaskConical, ListTodo } from 'lucide-svelte';
+	import { ArrowUpDown, ArrowUp, ArrowDown, Edit2, Trash2, CheckCircle2, Circle, PlayCircle, User, Folder, Clock, Calendar, MoreVertical, ChevronDown, ChevronUp, ChevronRight, Flag, X, QrCode, FlaskConical, ListTodo, Check, Square, CheckSquare } from 'lucide-svelte';
 	import Pagination from './Pagination.svelte';
 
 	export let tasks: Task[] = [];
@@ -13,6 +13,7 @@
 		delete: number;
 		deleteSelected: number[];
 		statusChange: { id: number; status: Task['status'] };
+		checklistToggle: { taskId: number; checklistItemId: string };
 		changeSprint: number[];
 		changeStatus: number[];
 		changeProject: number[];
@@ -31,6 +32,16 @@
 	let sortDirection: SortDirection = 'desc';
 	let selectedTasks: Set<number> = new Set();
 	let expandedMobileCards: Set<number> = new Set();
+	let expandedChecklists: Set<number> = new Set();
+
+	function toggleChecklistExpand(taskId: number) {
+		if (expandedChecklists.has(taskId)) {
+			expandedChecklists.delete(taskId);
+		} else {
+			expandedChecklists.add(taskId);
+		}
+		expandedChecklists = expandedChecklists;
+	}
 
 	// Pagination
 	let pageSize = 50;
@@ -414,12 +425,17 @@
 								{#if task.checklist && task.checklist.length > 0}
 									{@const completed = task.checklist.filter(i => i.completed).length}
 									{@const total = task.checklist.length}
-									<div class="mt-1 flex items-center gap-1.5">
+									<button
+									type="button"
+									on:click|stopPropagation={() => toggleChecklistExpand(task.id!)}
+									class="mt-1 flex items-center gap-1.5 py-1 px-1.5 -ml-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
+								>
+									<svelte:component this={expandedChecklists.has(task.id!) ? ChevronDown : ChevronRight} size={14} class="text-gray-500 dark:text-gray-400 flex-shrink-0" />
 										<div class="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-											<div class="h-full bg-primary" style="width: {(completed/total)*100}% transition: width 0.3s"></div>
+											<div class="h-full {completed === total ? 'bg-green-500' : 'bg-blue-500'} transition-all duration-300" style="width: {(completed/total)*100}%"></div>
 										</div>
-										<span class="text-[10px] text-gray-400 whitespace-nowrap">{completed}/{total}</span>
-									</div>
+										<span class="text-[10px] {completed === total ? 'text-green-500' : 'text-gray-400'} whitespace-nowrap">{completed}/{total}</span>
+									</button>
 								{/if}
 								{#if task.project}
 									<span class="lg:hidden inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 w-fit">
@@ -507,6 +523,33 @@
 							</div>
 						</td>
 					</tr>
+					{#if task.checklist && task.checklist.length > 0 && expandedChecklists.has(task.id!)}
+						<tr class="bg-gray-50/50 dark:bg-gray-800/30">
+							<td colspan="9" class="px-4 py-2 lg:px-6">
+								<div class="ml-4 space-y-1 max-h-[180px] overflow-y-auto pr-2">
+									{#each task.checklist as item (item.id)}
+										<label
+											class="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
+											on:click|stopPropagation
+										>
+											<button
+												type="button"
+												on:click|stopPropagation={() => dispatch('checklistToggle', { taskId: task.id!, checklistItemId: item.id })}
+												class="w-4 h-4 flex items-center justify-center rounded border flex-shrink-0 transition-colors {item.completed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500'}"
+											>
+												{#if item.completed}
+													<Check size={10} strokeWidth={3} />
+												{/if}
+											</button>
+											<span class="text-xs {item.completed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}">
+												{item.text}
+											</span>
+										</label>
+									{/each}
+								</div>
+							</td>
+						</tr>
+					{/if}
 				{:else}
 					<tr>
 						<td colspan="9" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">

@@ -3,7 +3,7 @@
 	import { browser } from '$app/environment';
 	import type { Task, Project, Assignee, Sprint, ChecklistItem } from '$lib/types';
 	import { CATEGORIES } from '$lib/types';
-	import { Calendar, FileText, Tag, CheckCircle, User, Plus, Folder, X, Flag, GitBranch, Copy, Check, Trash2, CheckSquare, Square, ListTodo } from 'lucide-svelte';
+	import { Calendar, FileText, Tag, CheckCircle, User, Plus, Folder, X, Flag, GitBranch, GitPullRequest, Copy, Check, Trash2, CheckSquare, Square, ListTodo, ExternalLink } from 'lucide-svelte';
 	import { taskDefaults } from '$lib/stores/taskDefaults';
 	import { _ } from 'svelte-i18n';
 	import SearchableSelect from './SearchableSelect.svelte';
@@ -15,6 +15,7 @@
 		cancel: void;
 		close: void;
 		addAssignee: { name: string; color: string };
+		checklistUpdate: { checklist: ChecklistItem[] };
 	}>();
 
 	export let show = false;
@@ -35,8 +36,12 @@
 	let checklist: ChecklistItem[] = [];
 	let newChecklistItem = '';
 	let isAddingChecklistItem = false;
+	let deletingChecklistItemId: string | null = null;
+	let checklistVisibleCount = 10;
 	$: completedCount = checklist.filter(i => i.completed).length;
 	$: progress = checklist.length > 0 ? Math.round((completedCount / checklist.length) * 100) : 0;
+	$: visibleChecklist = checklist.slice(0, checklistVisibleCount);
+	$: hasMoreChecklist = checklist.length > checklistVisibleCount;
 
 	$: activeSprint = sprints.find(s => s.status === 'active');
 
@@ -88,6 +93,49 @@
 	let formInitKey = 'closed';
 
 	$: branchName = `${gitFlowType}/${branchSlug || 'untitled-task'}`;
+
+	// Get the current project's repo_url
+	$: currentProjectRepoUrl = (() => {
+		if (!project) return '';
+		const matched = projects.find(p => p.name === project);
+		return matched?.repo_url || '';
+	})();
+
+	/**
+	 * Build a "new pull request / merge request" URL for the current branch.
+	 * Supports GitHub, GitLab, and Bitbucket.
+	 */
+	function getPullRequestUrl(): string {
+		if (!currentProjectRepoUrl) return '';
+
+		// Normalise: strip trailing slash and .git
+		let base = currentProjectRepoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
+
+		const branch = branchName;
+
+		if (base.includes('github.com')) {
+			// GitHub: /compare/<branch>?expand=1
+			return `${base}/compare/${encodeURIComponent(branch)}?expand=1`;
+		}
+
+		if (base.includes('gitlab.com') || base.includes('gitlab')) {
+			// GitLab: /-/merge_requests/new?merge_request[source_branch]=<branch>
+			return `${base}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${encodeURIComponent(branch)}`;
+		}
+
+		if (base.includes('bitbucket.org') || base.includes('bitbucket')) {
+			// Bitbucket: /pull-requests/new?source=<branch>
+			return `${base}/pull-requests/new?source=${encodeURIComponent(branch)}`;
+		}
+
+		// Fallback: just open the repo
+		return base;
+	}
+
+	function openPullRequest() {
+		const url = getPullRequestUrl();
+		if (url) window.open(url, '_blank', 'noopener,noreferrer');
+	}
 
 	function getTranslatorApi(): BuiltInTranslator | null {
 		if (typeof window === 'undefined') return null;
@@ -318,16 +366,19 @@
 			}
 		];
 		newChecklistItem = '';
+		if (editingTask) dispatch('checklistUpdate', { checklist });
 	}
 
 	function removeChecklistItem(id: string) {
 		checklist = checklist.filter((item) => item.id !== id);
+		if (editingTask) dispatch('checklistUpdate', { checklist });
 	}
 
 	function toggleChecklistItem(id: string) {
 		checklist = checklist.map((item) =>
 			item.id === id ? { ...item, completed: !item.completed } : item
 		);
+		if (editingTask) dispatch('checklistUpdate', { checklist });
 	}
 
 	function handleChecklistKeydown(event: KeyboardEvent) {
@@ -369,6 +420,7 @@
 		newAssigneeName = '';
 		newAssigneeColor = '#6366F1';
 		newChecklistItem = '';
+		checklistVisibleCount = 10;
 		showBranchDialog = false;
 	}
 
@@ -474,12 +526,13 @@
 {#if show}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div class="fixed inset-0 bg-black/20 backdrop-blur-sm z-[999] pointer-events-none !m-0"></div>
 	<div
-		class="fixed inset-0 bg-black/50 z-50 overflow-y-auto"
+		class="fixed inset-0 z-[999] overflow-y-auto !m-0"
 		on:click|self={handleClose}
 	>
 		<div class="flex min-h-full items-center justify-center p-4">
-			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full animate-modal-in relative">
+			<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full animate-modal-in relative max-h-[90vh] flex flex-col">
 			<!-- Header -->
 			<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 				<h2 class="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
@@ -487,6 +540,18 @@
 					{editingTask ? $_('taskForm__edit_task_title') : $_('taskForm__add_task_title')}
 				</h2>
 				<div class="flex items-center gap-2">
+					{#if currentProjectRepoUrl}
+						<button
+							type="button"
+							on:click={openPullRequest}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
+							title="Open Pull Request"
+						>
+							<GitPullRequest size={14} />
+							<span>Pull Request</span>
+							<ExternalLink size={12} class="opacity-60" />
+						</button>
+					{/if}
 					<button
 						type="button"
 						on:click={openBranchDialog}
@@ -508,7 +573,8 @@
 			</div>
 
 			<!-- Form Content -->
-			<form on:submit|preventDefault={handleSubmit} class="p-6 space-y-4">
+			<form on:submit|preventDefault={handleSubmit} class="flex flex-col flex-1 min-h-0">
+				<div class="p-6 space-y-4 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
 				<div>
 					<label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
 						{$_('taskForm__task_title_label')} <span class="text-danger">*</span>
@@ -716,7 +782,7 @@
 					</div>
 
 					<div class="space-y-1">
-						{#each checklist as item (item.id)}
+						{#each visibleChecklist as item (item.id)}
 							<div class="flex items-start gap-2 group py-1">
 								<button 
 									type="button"
@@ -731,19 +797,49 @@
 									<input 
 										type="text"
 										bind:value={item.text}
+										on:change={() => editingTask && dispatch('checklistUpdate', { checklist })}
 										class="w-full bg-transparent border-none focus:ring-0 text-sm p-0 font-medium {item.completed ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-gray-200'}"
 									/>
 								</div>
-								<button 
-									type="button"
-									on:click={() => removeChecklistItem(item.id)}
-									class="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-								>
-									<Trash2 size={14} />
-								</button>
+								{#if deletingChecklistItemId === item.id}
+									<button 
+										type="button"
+										on:click={() => { removeChecklistItem(item.id); deletingChecklistItemId = null; }}
+										class="p-1 text-green-500 hover:text-green-600 transition-colors"
+										title="Confirm delete"
+									>
+										<Check size={14} strokeWidth={3} />
+									</button>
+									<button 
+										type="button"
+										on:click={() => deletingChecklistItemId = null}
+										class="p-1 text-red-500 hover:text-red-600 transition-colors"
+										title="Cancel"
+									>
+										<X size={14} strokeWidth={3} />
+									</button>
+								{:else}
+									<button 
+										type="button"
+										on:click={() => deletingChecklistItemId = item.id}
+										class="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+									>
+										<Trash2 size={14} />
+									</button>
+								{/if}
 							</div>
 						{/each}
 					</div>
+
+					{#if hasMoreChecklist}
+						<button
+							type="button"
+							on:click={() => checklistVisibleCount += 10}
+							class="w-full py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+						>
+							ดูเพิ่มอีก {Math.min(10, checklist.length - checklistVisibleCount)} รายการ ({checklistVisibleCount}/{checklist.length})
+						</button>
+					{/if}
 
 					{#if !isAddingChecklistItem}
 						<button 
@@ -823,8 +919,10 @@
 			></textarea>
 		</div>
 
+		</div>
+
 		<!-- Buttons -->
-		<div class="flex gap-3 pt-2">
+		<div class="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
 			<button
 				type="button"
 				on:click={handleClose}
@@ -963,5 +1061,26 @@
 
 	.animate-modal-in {
 		animation: modal-in 0.2s ease-out;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar {
+		width: 4px;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-thumb {
+		background: #d1d5db;
+		border-radius: 10px;
+	}
+
+	.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+		background: #4b5563;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+		background: #9ca3af;
 	}
 </style>

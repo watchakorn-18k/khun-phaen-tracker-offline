@@ -1383,6 +1383,7 @@ export async function exportToCSV(): Promise<string> {
     "assignee_id",
     "sprint_id",
     "is_archived",
+    "checklist",
     "created_at",
   ];
   const csvRows = [headers.join(",")];
@@ -1465,8 +1466,8 @@ export async function importFromCSV(
         if (row.id) {
           runSql(
             `
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               parseInt(row.id),
@@ -1480,14 +1481,15 @@ export async function importFromCSV(
               row.assignee_id ? parseInt(row.assignee_id) : null,
               row.sprint_id ? parseInt(row.sprint_id) : null,
               row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
+              row.checklist || null,
               row.created_at || new Date().toISOString(),
             ],
           );
         } else {
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -1500,6 +1502,7 @@ export async function importFromCSV(
               row.assignee_id ? parseInt(row.assignee_id) : null,
               row.sprint_id ? parseInt(row.sprint_id) : null,
               row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
+              row.checklist || null,
             ],
           );
         }
@@ -1615,8 +1618,8 @@ export async function mergeTasksFromCSV(
         try {
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -1629,6 +1632,7 @@ export async function mergeTasksFromCSV(
               row.assignee_id ? parseInt(row.assignee_id) : null,
               row.sprint_id ? parseInt(row.sprint_id) : null,
               row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
+              row.checklist || null,
               row.created_at || new Date().toISOString(),
             ],
           );
@@ -1641,7 +1645,7 @@ export async function mergeTasksFromCSV(
         const serverDate = new Date(row.created_at || 0).getTime();
         const localDate = new Date(existing.created_at || 0).getTime();
 
-        // Check if content is different (include sprint_id and is_archived)
+        // Check if content is different (include sprint_id, is_archived and checklist)
         const isDifferent =
           row.title !== existing.title ||
           row.status !== existing.status ||
@@ -1650,7 +1654,8 @@ export async function mergeTasksFromCSV(
           (row.sprint_id ? parseInt(row.sprint_id) : null) !==
             existing.sprint_id ||
           (row.is_archived === "1" || row.is_archived === "true") !==
-            (existing.is_archived === 1);
+            (existing.is_archived === 1) ||
+          (row.checklist || null) !== (existing.checklist || null);
 
         if (isDifferent && serverDate >= localDate) {
           // Server version is newer or same age but different - update
@@ -1660,7 +1665,7 @@ export async function mergeTasksFromCSV(
 							UPDATE tasks 
 							SET title = ?, project = ?, duration_minutes = ?, 
 							    date = ?, status = ?, category = ?, notes = ?, 
-							    assignee_id = ?, sprint_id = ?, is_archived = ?, created_at = ?
+							    assignee_id = ?, sprint_id = ?, is_archived = ?, checklist = ?, created_at = ?
 							WHERE id = ?
 						`,
               [
@@ -1674,6 +1679,7 @@ export async function mergeTasksFromCSV(
                 row.assignee_id ? parseInt(row.assignee_id) : null,
                 row.sprint_id ? parseInt(row.sprint_id) : null,
                 row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
+                row.checklist || null,
                 row.created_at || new Date().toISOString(),
                 serverId,
               ],
@@ -1779,6 +1785,7 @@ export async function exportAllData(): Promise<string> {
     "assignee_name",
     "sprint_id",
     "is_archived",
+    "checklist",
     "created_at",
     "updated_at",
     "end_date",
@@ -2238,8 +2245,8 @@ export async function importAllData(
           // Use REPLACE for sync with existing IDs
           runSql(
             `
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, created_at, end_date)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, created_at, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               rowId,
@@ -2253,6 +2260,7 @@ export async function importAllData(
               assigneeId,
               sprintId,
               isArchived,
+              row.checklist || null,
               row.created_at || new Date().toISOString(),
               row.end_date || null,
             ],
@@ -2261,8 +2269,8 @@ export async function importAllData(
           // Always INSERT as new task (ignore ID from file)
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, end_date)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -2275,6 +2283,7 @@ export async function importAllData(
               assigneeId,
               sprintId,
               isArchived,
+              row.checklist || null,
               row.end_date || null,
             ],
           );
