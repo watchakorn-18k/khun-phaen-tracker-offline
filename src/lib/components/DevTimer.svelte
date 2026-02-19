@@ -244,19 +244,19 @@
 <div class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 font-sans">
 	<!-- Utility Buttons Row -->
 	<div class="flex items-center gap-2">
-		<button on:click={() => dispatch('showQuickNotes')} class="util-btn bg-indigo-600/90 hover:bg-indigo-500" title={$_('quickNotes__title')}>
+		<button onclick={() => dispatch('showQuickNotes')} class="util-btn bg-indigo-600/90 hover:bg-indigo-500" title={$_('quickNotes__title')}>
 			<FileText size={18} />
 		</button>
-		<button on:click={() => dispatch('showBookmarks')} class="util-btn bg-amber-500/90 hover:bg-amber-400 text-amber-950" title={$_('timer__bookmarks_tooltip')}>
+		<button onclick={() => dispatch('showBookmarks')} class="util-btn bg-amber-500/90 hover:bg-amber-400 text-amber-950" title={$_('timer__bookmarks_tooltip')}>
 			<Bookmark size={18} />
 		</button>
-		<button on:click={() => dispatch('showWhiteboard')} class="util-btn bg-sky-500/90 hover:bg-sky-400 text-sky-950" title={$_('timer__whiteboard_tooltip')}>
+		<button onclick={() => dispatch('showWhiteboard')} class="util-btn bg-sky-500/90 hover:bg-sky-400 text-sky-950" title={$_('timer__whiteboard_tooltip')}>
 			<PenTool size={18} />
 		</button>
 	</div>
 
 	<!-- Main Timer Complex -->
-	<div class="relative group" on:mouseenter={handleMouseEnter} on:mouseleave={handleMouseLeave} role="group">
+	<div class="relative group" onmouseenter={handleMouseEnter} onmouseleave={handleMouseLeave} role="group">
 		<!-- Popovers (Stacked) -->
 		{#if isExpanded}
 			<div 
@@ -276,13 +276,13 @@
 							</span>
 						</div>
 						<div class="flex items-center gap-1">
-							<button on:click={toggleLogs} class="icon-btn {showLogs ? 'bg-primary/20 text-primary' : ''}" title={$_('timer__history_title')}>
+							<button onclick={toggleLogs} class="icon-btn {showLogs ? 'bg-primary/20 text-primary' : ''}" title={$_('timer__history_title')}>
 								<History size={16} />
 							</button>
-							<button on:click={() => soundEnabled = !soundEnabled} class="icon-btn">
+							<button onclick={() => soundEnabled = !soundEnabled} class="icon-btn">
 								{#if soundEnabled}<Bell size={16} />{:else}<BellOff size={16} />{/if}
 							</button>
-							<button on:click={() => showKeyboardShortcuts.set(true)} class="icon-btn">
+							<button onclick={() => showKeyboardShortcuts.set(true)} class="icon-btn">
 								<HelpCircle size={16} />
 							</button>
 						</div>
@@ -294,7 +294,7 @@
 						<div class="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl">
 							{#each ['countup', 'pomodoro', 'countdown'] as mode}
 								<button 
-									on:click={() => setTimerMode(mode as TimerMode)}
+									onclick={() => setTimerMode(mode as TimerMode)}
 									class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all {timerMode === mode ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105' : 'text-white/40 hover:text-white hover:bg-white/5'}"
 								>
 									{#if mode === 'countup'}<Timer size={14} />{/if}
@@ -313,22 +313,22 @@
 								<div transition:fade={{ duration: 200 }} class="space-y-4">
 									<div class="grid grid-cols-2 gap-3">
 										<div class="space-y-1">
-											<label class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_work')}</label>
+											<label for="pomodoro-work-minutes" class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_work')}</label>
 											<div class="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden focus-within:border-primary/50 transition-colors">
-												<input type="number" bind:value={pomodoroWorkMinutes} on:change={() => startPomodoroPhase('work')} class="w-full bg-transparent px-3 py-1.5 text-sm text-white focus:outline-none" />
+												<input id="pomodoro-work-minutes" type="number" bind:value={pomodoroWorkMinutes} onchange={() => startPomodoroPhase('work')} class="w-full bg-transparent px-3 py-1.5 text-sm text-white focus:outline-none" />
 											</div>
 										</div>
 										<div class="space-y-1">
-											<label class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_break')}</label>
+											<label for="pomodoro-break-minutes" class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_break')}</label>
 											<div class="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden focus-within:border-primary/50 transition-colors">
-												<input type="number" bind:value={pomodoroBreakMinutes} on:change={() => startPomodoroPhase('work')} class="w-full bg-transparent px-3 py-1.5 text-sm text-white focus:outline-none" />
+												<input id="pomodoro-break-minutes" type="number" bind:value={pomodoroBreakMinutes} onchange={() => startPomodoroPhase('work')} class="w-full bg-transparent px-3 py-1.5 text-sm text-white focus:outline-none" />
 											</div>
 										</div>
 									</div>
 									<div class="flex flex-wrap gap-1.5">
 										{#each pomodoroPresets as min}
 											<button 
-												on:click={() => setPomodoroPreset(min)}
+												onclick={() => setPomodoroPreset(min)}
 												class="px-2.5 py-1 text-[10px] font-bold rounded-full border border-white/10 hover:border-primary/50 hover:bg-primary/10 transition-all {pomodoroWorkMinutes === min ? 'bg-primary/20 border-primary/50 text-primary' : 'text-white/40'}"
 											>
 												{$_('timer__preset_short', { values: { min } })}
@@ -339,12 +339,12 @@
 							{:else if timerMode === 'countdown'}
 								<div transition:fade={{ duration: 200 }} class="grid grid-cols-2 gap-3">
 									<div class="space-y-1">
-										<label class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_hours')}</label>
-										<input type="number" bind:value={targetHours} on:change={setCountdownFromGoal} class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary/50" />
+										<label for="countdown-hours" class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_hours')}</label>
+										<input id="countdown-hours" type="number" bind:value={targetHours} onchange={setCountdownFromGoal} class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary/50" />
 									</div>
 									<div class="space-y-1">
-										<label class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_minutes')}</label>
-										<input type="number" bind:value={targetMinutes} on:change={setCountdownFromGoal} class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary/50" />
+										<label for="countdown-minutes" class="text-[10px] font-bold uppercase text-white/40 ml-1">{$_('timer__settings_minutes')}</label>
+										<input id="countdown-minutes" type="number" bind:value={targetMinutes} onchange={setCountdownFromGoal} class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary/50" />
 									</div>
 								</div>
 							{:else}
@@ -356,12 +356,12 @@
 
 						<!-- Action Row -->
 						<div class="flex items-center gap-2 pt-2 border-t border-white/5">
-							<button on:click={stop} class="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all border border-white/5">
+							<button onclick={stop} class="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all border border-white/5">
 								<RotateCcw size={14} />
 								{$_('timer__btn_reset')}
 							</button>
 							{#if elapsed > 0}
-								<button on:click={() => showSaveDialog = true} class="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-primary hover:bg-primary-dark text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-primary/20">
+								<button onclick={() => showSaveDialog = true} class="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-primary hover:bg-primary-dark text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-primary/20">
 									<Save size={14} />
 									{$_('timer__btn_save_action')}
 								</button>
@@ -374,7 +374,7 @@
 						<div transition:slide class="bg-black/40 border-t border-white/10 p-4 space-y-3">
 							<div class="flex items-center justify-between">
 								<h3 class="text-xs font-bold uppercase tracking-wider text-white/60">{$_('timer__history_recent_title')}</h3>
-								<button on:click={() => showLogs = false} class="text-white/40 hover:text-white"><X size={14} /></button>
+								<button onclick={() => showLogs = false} class="text-white/40 hover:text-white"><X size={14} /></button>
 							</div>
 							<div class="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
 								{#each [...$timeLogs].reverse().slice(0, 5) as log}
@@ -383,7 +383,7 @@
 											<span class="font-bold text-primary">{formatDuration(log.duration)}</span>
 											{#if log.note}<span class="text-white/40 truncate w-32">{log.note}</span>{/if}
 										</div>
-										<button on:click={() => timeLogs.remove(log.id)} class="text-white/20 hover:text-red-400">
+										<button onclick={() => timeLogs.remove(log.id)} class="text-white/20 hover:text-red-400">
 											<X size={12} />
 										</button>
 									</div>
@@ -400,23 +400,24 @@
 
 		<!-- Save Dialog Overlay -->
 		{#if showSaveDialog}
-			<div transition:fade class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" on:click={() => showSaveDialog = false}>
-				<div class="glass-card w-full max-w-sm p-6 space-y-4 shadow-2xl scale-up-center" on:click|stopPropagation>
+			<div transition:fade class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showSaveDialog = false; }}>
+				<div class="glass-card w-full max-w-sm p-6 space-y-4 shadow-2xl scale-up-center" role="dialog" aria-modal="true" aria-labelledby="save-dialog-title">
 					<div class="flex items-center justify-between">
-						<h3 class="text-lg font-bold text-white">{$_('timer__dialog_save_title')}</h3>
+						<h3 id="save-dialog-title" class="text-lg font-bold text-white">{$_('timer__dialog_save_title')}</h3>
 						<span class="text-primary font-mono font-bold text-xl">{formatTime(elapsed)}</span>
 					</div>
 					<div class="space-y-2">
-						<label class="text-[10px] font-bold uppercase text-white/40">{$_('timer__dialog_note_label')}</label>
-						<textarea 
+						<label for="save-note" class="text-[10px] font-bold uppercase text-white/40">{$_('timer__dialog_note_label')}</label>
+						<textarea
+					id="save-note" 
 							bind:value={saveNote}
 							placeholder={$_('timer__dialog_note_placeholder')}
 							class="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-primary/50 resize-none"
 						></textarea>
 					</div>
 					<div class="flex gap-3 pt-2">
-						<button on:click={() => showSaveDialog = false} class="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all">{$_('timer__btn_cancel')}</button>
-						<button on:click={saveTime} class="flex-1 py-3 px-4 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+						<button onclick={() => showSaveDialog = false} class="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all">{$_('timer__btn_cancel')}</button>
+						<button onclick={saveTime} class="flex-1 py-3 px-4 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
 							<Check size={18} />
 							{$_('timer__btn_save_session')}
 						</button>
@@ -429,7 +430,7 @@
 		<div class="flex items-center bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/5 p-1 transition-all duration-300 hover:border-white/20">
 			<!-- Play/Pause Quick Action -->
 			<button 
-				on:click={toggleTimer}
+				onclick={toggleTimer}
 				class="w-12 h-12 flex items-center justify-center rounded-xl transition-all {isRunning ? 'bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/20' : 'bg-white/5 hover:bg-white/10'}"
 			>
 				{#if isRunning}
@@ -443,8 +444,8 @@
 			<button 
 				type="button"
 				class="px-3 pr-4 flex flex-col justify-center select-none cursor-pointer border-none bg-transparent text-left focus:outline-none focus:ring-1 focus:ring-primary/30 rounded-lg" 
-				on:click={handleMouseEnter}
-				on:keydown={(e) => e.key === 'Enter' && handleMouseEnter()}
+				onclick={handleMouseEnter}
+				onkeydown={(e) => e.key === 'Enter' && handleMouseEnter()}
 			>
 				<div class="flex items-center gap-2">
 					<span class="font-mono text-xl font-bold text-white tabular-nums leading-none tracking-tight">

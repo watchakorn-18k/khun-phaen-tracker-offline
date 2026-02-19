@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, tick } from 'svelte';
-	import { Wifi, WifiOff, Download, Trash2, X, LoaderCircle, TriangleAlert } from 'lucide-svelte';
+	import { Wifi, WifiOff, Download, Trash2, X, LoaderCircle, TriangleAlert, Maximize2, Minimize2 } from 'lucide-svelte';
+	import { _ } from 'svelte-i18n';
 
 	type Snapshot = Record<string, unknown>;
 	type BridgeMode = 'offline' | 'sync';
@@ -43,7 +44,7 @@
 	let bridge: MountedTldrawBridge | null = null;
 	let bridgeModule: TldrawBridgeModule | null = null;
 	let connectionState: ConnectionState = 'offline';
-	let statusMessage = 'โหมดออฟไลน์: บันทึกลงเบราว์เซอร์';
+	let statusMessage = $_('whiteboard__status_offline');
 	let isBooting = false;
 	let active = false;
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -53,6 +54,8 @@
 	let syncHost = DEFAULT_SYNC_HOST;
 	let hasLicense = true;
 	let licenseChecked = false;
+	let isFullscreen = false;
+	let showLicenseWarning = true;
 
 	$: if (open && !active) {
 		active = true;
@@ -110,13 +113,13 @@
 		if (roomCode) {
 			mode = 'sync';
 			connectionState = 'connecting';
-			statusMessage = `กำลังเชื่อมต่อห้อง ${roomCode}...`;
+			statusMessage = $_('whiteboard__status_connecting', { values: { room: roomCode } });
 			return;
 		}
 
 		mode = 'offline';
 		connectionState = 'offline';
-		statusMessage = 'โหมดออฟไลน์: ไม่พบห้อง sync';
+		statusMessage = $_('whiteboard__status_no_room');
 	}
 
 	function handleSyncStatus(status: BridgeSyncStatus, message: string) {
@@ -168,7 +171,7 @@
 
 		mode = 'offline';
 		connectionState = 'offline';
-		statusMessage = 'โหมดออฟไลน์: บันทึกลงเบราว์เซอร์';
+		statusMessage = $_('whiteboard__status_offline');
 		roomCode = '';
 	}
 
@@ -176,69 +179,104 @@
 		if (!bridge) return;
 		const dataUrl = await bridge.exportPng();
 		if (!dataUrl) {
-			dispatch('notify', { message: 'ไม่มีเนื้อหาบนกระดานให้ export', type: 'error' });
+			dispatch('notify', { message: $_('whiteboard__notify_export_error'), type: 'error' });
 			return;
 		}
 		const a = document.createElement('a');
 		a.href = dataUrl;
 		a.download = `whiteboard-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
 		a.click();
-		dispatch('notify', { message: 'Export PNG สำเร็จ', type: 'success' });
+		dispatch('notify', { message: $_('whiteboard__notify_export_success'), type: 'success' });
 	}
 
 	function handleClearBoard() {
-		const shouldClear = confirm('ต้องการล้างกระดานทั้งหมดหรือไม่?');
+		const shouldClear = confirm($_('whiteboard__confirm_clear'));
 		if (!shouldClear) return;
 		bridge?.clearCurrentPage();
 		localStorage.removeItem(SNAPSHOT_KEY);
 		latestSnapshotRaw = null;
-		dispatch('notify', { message: 'ล้างกระดานแล้ว', type: 'success' });
+		dispatch('notify', { message: $_('whiteboard__notify_clear_success'), type: 'success' });
 	}
 </script>
 
 {#if open}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div class="fixed inset-0 z-100 bg-black/55 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center" on:click|self={() => dispatch('close')}>
-		<div class="w-full max-w-7xl h-[92vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-			<div class="px-4 sm:px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
-				<div class="min-w-0">
-					<h3 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white truncate">Whiteboard</h3>
-					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1.5">
+	<div
+		class="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center transition-all duration-300"
+		class:p-2={!isFullscreen}
+		class:sm:p-4={!isFullscreen}
+		class:md:p-6={!isFullscreen}
+		class:pt-20={!isFullscreen}
+		class:sm:pt-20={!isFullscreen}
+		class:md:pt-6={!isFullscreen}
+		on:click|self={() => dispatch('close')}
+	>
+		<div
+			class="bg-white dark:bg-gray-900 flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
+			class:w-full={isFullscreen}
+			class:h-full={isFullscreen}
+			class:max-w-7xl={!isFullscreen}
+			class:rounded-lg={!isFullscreen}
+			class:sm:rounded-xl={!isFullscreen}
+			class:md:rounded-2xl={!isFullscreen}
+			class:shadow-2xl={!isFullscreen}
+			class:border={!isFullscreen}
+			class:border-gray-200={!isFullscreen}
+			class:dark:border-gray-700={!isFullscreen}
+			style={!isFullscreen ? 'width: 100%; height: calc(100vh - 5rem);' : ''}
+		>
+			<div class="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
+				<div class="min-w-0 flex-1">
+					<h3 class="text-sm sm:text-base md:text-lg font-semibold text-gray-900 dark:text-white truncate">{$_('whiteboard__title')}</h3>
+					<div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1 sm:gap-1.5">
 						{#if connectionState === 'online'}
-							<Wifi size={13} class="text-emerald-500" />
+							<Wifi size={12} class="text-emerald-500 shrink-0" />
 						{:else if connectionState === 'connecting'}
-							<LoaderCircle size={13} class="animate-spin text-amber-500" />
+							<LoaderCircle size={12} class="animate-spin text-amber-500 shrink-0" />
 						{:else if connectionState === 'error'}
-							<WifiOff size={13} class="text-red-500" />
+							<WifiOff size={12} class="text-red-500 shrink-0" />
 						{:else}
-							<WifiOff size={13} class="text-gray-400" />
+							<WifiOff size={12} class="text-gray-400 shrink-0" />
 						{/if}
 						<span class="truncate">{statusMessage}</span>
 					</div>
 				</div>
 
-				<div class="flex items-center gap-2">
+				<div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+					<button
+						on:click={() => isFullscreen = !isFullscreen}
+						class="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md sm:rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1 sm:gap-1.5"
+						title={isFullscreen ? $_('whiteboard__mode_mini') : $_('whiteboard__mode_fullscreen')}
+					>
+						{#if isFullscreen}
+							<Minimize2 size={15} />
+							<span class="hidden md:inline">{$_('whiteboard__mode_mini')}</span>
+						{:else}
+							<Maximize2 size={15} />
+							<span class="hidden md:inline">{$_('whiteboard__mode_fullscreen')}</span>
+						{/if}
+					</button>
 					<button
 						on:click={handleExportPng}
-						class="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1.5"
-						title="Export PNG"
+						class="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md sm:rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1 sm:gap-1.5"
+						title={$_('whiteboard__btn_export')}
 					>
 						<Download size={15} />
-						<span class="hidden sm:inline">Export PNG</span>
+						<span class="hidden md:inline">{$_('whiteboard__btn_export')}</span>
 					</button>
 					<button
 						on:click={handleClearBoard}
-						class="px-3 py-2 text-sm rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex items-center gap-1.5"
-						title="ล้างกระดาน"
+						class="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm rounded-md sm:rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex items-center gap-1 sm:gap-1.5"
+						title={$_('whiteboard__btn_clear')}
 					>
 						<Trash2 size={15} />
-						<span class="hidden sm:inline">ล้าง</span>
+						<span class="hidden md:inline">{$_('whiteboard__btn_clear')}</span>
 					</button>
 					<button
 						on:click={() => dispatch('close')}
-						class="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-						title="ปิด"
+						class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-md sm:rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shrink-0"
+						title={$_('whiteboard__btn_close')}
 					>
 						<X size={16} />
 					</button>
@@ -246,24 +284,34 @@
 			</div>
 
 			<div class="flex-1 min-h-0 bg-white dark:bg-gray-950 relative">
-				{#if licenseChecked && !hasLicense}
-					<div class="mx-4 mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded-lg flex items-start gap-2.5 text-sm">
-						<TriangleAlert size={18} class="text-amber-500 shrink-0 mt-0.5" />
-						<div class="text-amber-800 dark:text-amber-200">
-							<p class="font-semibold">Whiteboard ทำงานได้ แต่ยังไม่มี tldraw License Key</p>
-							<p class="mt-1 text-amber-700 dark:text-amber-300">
-								คัดลอก <code class="bg-amber-100 dark:bg-amber-900/60 px-1 rounded">.env.example</code> เป็น <code class="bg-amber-100 dark:bg-amber-900/60 px-1 rounded">.env</code> แล้วใส่ License Key ของคุณ
-								&mdash; ขอ key ฟรี (non-commercial) ได้ที่
-								<a href="https://tldraw.dev" target="_blank" rel="noopener noreferrer" class="underline font-medium hover:text-amber-900 dark:hover:text-amber-100">tldraw.dev</a>
+				{#if licenseChecked && !hasLicense && showLicenseWarning}
+					<div class="mx-3 sm:mx-4 md:mx-5 mt-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg flex items-start gap-2.5">
+						<TriangleAlert size={18} class="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+						<div class="flex-1 min-w-0">
+							<p class="font-semibold text-sm text-blue-900 dark:text-blue-100">
+								{$_('whiteboard__license_title')}
+							</p>
+							<p class="mt-1.5 text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+								{$_('whiteboard__license_copy')} <code class="bg-blue-100 dark:bg-blue-900/50 px-1 rounded font-mono">.env.example</code>
+								{$_('whiteboard__license_to')} <code class="bg-blue-100 dark:bg-blue-900/50 px-1 rounded font-mono">.env</code>
+								{$_('whiteboard__license_then')}
+								<a href="https://tldraw.dev" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">tldraw.dev</a>
 							</p>
 						</div>
+						<button
+							on:click={() => showLicenseWarning = false}
+							class="shrink-0 p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400"
+							title={$_('whiteboard__btn_close')}
+						>
+							<X size={14} />
+						</button>
 					</div>
 				{/if}
 				{#if isBooting}
 					<div class="absolute inset-0 z-10 bg-white/80 dark:bg-gray-950/80 flex items-center justify-center">
-						<div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-							<LoaderCircle size={16} class="animate-spin" />
-							<span>กำลังโหลด Whiteboard...</span>
+						<div class="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+							<LoaderCircle size={14} class="sm:w-4 sm:h-4 animate-spin" />
+							<span>{$_('whiteboard__loading')}</span>
 						</div>
 					</div>
 				{/if}

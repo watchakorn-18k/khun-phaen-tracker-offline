@@ -5,6 +5,7 @@
 		"allowArbitraryExtensions": true,
 		"allowJs": true,
 		"checkJs": true,
+		"jsx": "react-jsx",
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,

@@ -2596,6 +2596,16 @@
 				showMessage($_('page__export_monthly_video_browser_not_supported'), 'error');
 				return;
 			}
+			const now = new Date();
+			const reportDate = formatDateISO(now);
+			const canvas = document.createElement('canvas');
+			canvas.width = 1280;
+			canvas.height = 720;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) {
+				showMessage($_('page__export_monthly_video_canvas_error'), 'error');
+				return;
+			}
 
 			const chartImages = await captureMonthlyChartImages();
 			const chartAssets = await Promise.all(
@@ -2961,7 +2971,7 @@
 			recorder.stop();
 			await stopPromise;
 			audioBed?.stop();
-			stream.getTracks().forEach((track) => track.stop());
+			stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
 
 			const blob = new Blob(chunks, { type: mimeType });
 			const url = URL.createObjectURL(blob);
@@ -3714,7 +3724,7 @@
 										</div>
 										<div class="text-right shrink-0">
 											<p class="text-[10px] text-gray-400 dark:text-gray-500 font-bold mb-1">{normalizeTaskDate(task.date)}</p>
-											<span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase {task.status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : task.status === 'in-progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : task.status === 'in-test' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : task.status === 'finish' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}">
+											<span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase {task.status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : task.status === 'in-progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : task.status === 'in-test' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}">
 												{task.status === 'done' ? $_('page__filter_status_done') : task.status === 'in-progress' ? $_('page__filter_status_in_progress') : task.status === 'in-test' ? $_('page__filter_status_in_test') : $_('page__filter_status_todo')}
 											</span>
 										</div>

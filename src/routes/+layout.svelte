@@ -217,9 +217,17 @@
 								<Moon size={20} />
 							{/if}
 						</button>
-						<div class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">
-							{$_('layout__local_storage')}
-						</div>
+
+						<!-- GitHub Link -->
+						<a
+							href="https://github.com/watchakorn-18k/khun-phaen-tracker-offline"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							title={$_('layout__github')}
+						>
+							<Github size={20} />
+						</a>
 					</div>
 				</div>
 			</div>
@@ -259,19 +267,10 @@
 
 		<footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 transition-colors">
 			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-				<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+				<div class="flex items-center justify-center">
 					<p class="text-sm text-gray-500 dark:text-gray-400">
 						{$_('layout__footer_copyright', { values: { year: new Date().getFullYear() } })}
 					</p>
-					<a
-						href="https://github.com/watchakorn-18k/khun-phaen-tracker-offline"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary transition-colors flex items-center gap-2"
-					>
-						<Github size={20} class="fill-current" />
-						<span>{$_('layout__github')}</span>
-					</a>
 				</div>
 			</div>
 		</footer>

@@ -4,13 +4,13 @@
 	import { FileText, X, Trash2, Copy, Check } from 'lucide-svelte';
 	import { quickNotes } from '$lib/stores/quickNotes';
 	import { _ } from 'svelte-i18n';
-	import { Tipex } from '@friendofsvelte/tipex';
+	import { Tipex, type TipexEditor } from '@friendofsvelte/tipex';
 	import '@friendofsvelte/tipex/styles/index.css';
 
 	const dispatch = createEventDispatcher<{ close: void }>();
 
-	let copied = false;
-	let tipexEditor = $state();
+	let copied = $state(false);
+	let tipexEditor = $state<TipexEditor>(undefined);
 	
 	// We use the store content as initial body
 	let content = $state($quickNotes);
@@ -53,15 +53,18 @@
 	};
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
 	class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm"
-	on:click|self={handleClose}
+	role="presentation"
+	onclick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
 >
-	<div 
+	<div
 		class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full h-[85vh] flex flex-col animate-modal-in overflow-hidden"
-		on:keydown={handleKeydown}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="quicknotes-title"
+		tabindex="-1"
+		onkeydown={handleKeydown}
 	>
 		<!-- Header -->
 		<div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -70,7 +73,7 @@
 					<FileText class="text-indigo-600 dark:text-indigo-400" size={20} />
 				</div>
 				<div>
-					<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+					<h3 id="quicknotes-title" class="text-lg font-semibold text-gray-900 dark:text-white">
 						{$_('quickNotes__title') || 'สมุดทดด่วน'}
 					</h3>
 					<p class="text-xs text-gray-500 dark:text-gray-400">
@@ -81,7 +84,7 @@
 			
 			<div class="flex items-center gap-2">
 				<button
-					on:click={handleCopy}
+					onclick={handleCopy}
 					class="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all"
 					title={$_('quickNotes__copy') || 'คัดลอกทั้งหมด'}
 				>
@@ -93,7 +96,7 @@
 				</button>
 				
 				<button
-					on:click={handleClear}
+					onclick={handleClear}
 					class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all"
 					title={$_('quickNotes__clear') || 'ล้างทั้งหมด'}
 				>
@@ -103,7 +106,7 @@
 				<div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
 				<button
-					on:click={handleClose}
+					onclick={handleClose}
 					class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
 				>
 					<X size={20} />
