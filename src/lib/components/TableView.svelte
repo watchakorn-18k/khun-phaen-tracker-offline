@@ -417,11 +417,7 @@
 								<span class="font-medium text-gray-900 dark:text-white text-sm truncate max-w-30 lg:max-w-50 xl:max-w-xs" title={task.title}>
 									{task.title}
 								</span>
-								{#if task.notes}
-									<span class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 max-w-30 lg:max-w-50 xl:max-w-xs">
-										{task.notes}
-									</span>
-								{/if}
+
 								{#if task.checklist && task.checklist.length > 0}
 									{@const completed = task.checklist.filter(i => i.completed).length}
 									{@const total = task.checklist.length}
@@ -697,11 +693,7 @@
 											<span class="text-xs text-gray-700 dark:text-gray-300">{formatDateFull(task.date)}</span>
 										</div>
 
-										{#if task.notes}
-											<div class="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
-												{task.notes}
-											</div>
-										{/if}
+
 									</div>
 								{/if}
 							</div>

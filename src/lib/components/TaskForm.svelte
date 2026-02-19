@@ -9,6 +9,7 @@
 	import SearchableSelect from './SearchableSelect.svelte';
 	import CustomDatePicker from './CustomDatePicker.svelte';
 	import SearchableSprintSelect from './SearchableSprintSelect.svelte';
+	import MarkdownEditor from './MarkdownEditor.svelte';
 
 	const dispatch = createEventDispatcher<{
 		submit: Omit<Task, 'id' | 'created_at'>;
@@ -972,17 +973,15 @@
 
 		<!-- Notes -->
 		<div>
-			<label for="notes" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+			<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
 				<FileText size={14} />
 				{$_('taskForm__notes_label')}
 			</label>
-			<textarea
-				id="notes"
+			<MarkdownEditor
 				bind:value={notes}
-				rows="3"
 				placeholder={$_('taskForm__notes_placeholder')}
-				class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none resize-none dark:bg-gray-700 dark:text-white"
-			></textarea>
+				rows={4}
+			/>
 		</div>
 
 		</div>
