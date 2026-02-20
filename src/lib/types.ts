@@ -39,6 +39,9 @@ export interface Task {
   status: "todo" | "in-progress" | "in-test" | "done";
   category: string;
   notes: string;
+  assignee_ids?: number[]; // Array of assignee IDs (multiple assignees)
+  assignees?: Assignee[]; // Array of assignee objects
+  // Legacy fields for backward compatibility (will be removed later)
   assignee_id?: number | null;
   assignee?: Assignee | null;
   sprint_id?: number | null;

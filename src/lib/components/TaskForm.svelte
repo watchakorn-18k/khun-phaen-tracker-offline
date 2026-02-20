@@ -32,7 +32,8 @@
 	let status: Task['status'] = editingTask?.status || 'todo';
 	let category = editingTask?.category || 'งานหลัก';
 	let notes = editingTask?.notes || '';
-	let assignee_id = editingTask?.assignee_id || null;
+	let assignee_ids: number[] = editingTask?.assignee_ids || (editingTask?.assignee_id ? [editingTask.assignee_id] : []);
+	let assignee_id_to_add: number | null = null; // For selecting new assignee to add
 	let sprint_id: number | null = editingTask?.sprint_id || null;
 	let checklist: ChecklistItem[] = [];
 	let newChecklistItem = '';
@@ -401,7 +402,7 @@
 			status = editingTask.status || 'todo';
 			category = editingTask.category || 'งานหลัก';
 			notes = editingTask.notes || '';
-			assignee_id = editingTask.assignee_id || null;
+			assignee_ids = editingTask.assignee_ids || (editingTask.assignee_id ? [editingTask.assignee_id] : []);
 			sprint_id = editingTask.sprint_id || null;
 			checklist = editingTask.checklist ? [...editingTask.checklist] : [];
 		} else {
@@ -413,7 +414,7 @@
 			status = 'todo';
 			category = $taskDefaults.category || 'งานหลัก';
 			notes = '';
-			assignee_id = $taskDefaults.assignee_id || null;
+			assignee_ids = $taskDefaults.assignee_id ? [$taskDefaults.assignee_id] : [];
 			sprint_id = activeSprint?.id || null;
 			checklist = [];
 		}
@@ -424,6 +425,7 @@
 		newAssigneeColor = '#6366F1';
 		newChecklistItem = '';
 		checklistVisibleCount = 10;
+		assignee_id_to_add = null;
 		checklistSelectMode = false;
 		selectedChecklistIds = new Set();
 		showBranchDialog = false;
@@ -450,7 +452,7 @@
 		if (!editingTask) {
 			taskDefaults.set({
 				project: project.trim(),
-				assignee_id,
+				assignee_id: assignee_ids.length > 0 ? assignee_ids[0] : null,
 				category
 			});
 		}
@@ -464,7 +466,8 @@
 			status,
 			category,
 			notes: notes.trim(),
-			assignee_id,
+			assignee_ids: assignee_ids.length > 0 ? assignee_ids : undefined,
+			assignee_id: assignee_ids.length > 0 ? assignee_ids[0] : null, // Legacy field
 			sprint_id,
 			checklist: checklist.length > 0 ? checklist : undefined
 		});
@@ -500,6 +503,20 @@
 	function getAssigneeById(id: number | null): Assignee | undefined {
 		return assignees.find(a => a.id === id);
 	}
+
+	function addAssigneeToTask() {
+		if (assignee_id_to_add !== null && !assignee_ids.includes(assignee_id_to_add)) {
+			assignee_ids = [...assignee_ids, assignee_id_to_add];
+			assignee_id_to_add = null;
+		}
+	}
+
+	function removeAssigneeFromTask(id: number) {
+		assignee_ids = assignee_ids.filter(assigneeId => assigneeId !== id);
+	}
+
+	$: selectedAssignees = assignee_ids.map(id => getAssigneeById(id)).filter(Boolean) as Assignee[];
+	$: availableAssignees = assignees.filter(a => a.id && !assignee_ids.includes(a.id));
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
@@ -716,16 +733,37 @@
 							</button>
 						</div>
 					{:else}
+						<!-- Show selected assignees as badges -->
+						{#if selectedAssignees.length > 0}
+							<div class="flex flex-wrap gap-2 mb-2">
+								{#each selectedAssignees as assignee (assignee.id)}
+									<div class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+										<span class="w-2.5 h-2.5 rounded-full" style="background-color: {assignee.color}"></span>
+										<span class="text-gray-700 dark:text-gray-300">{assignee.name}</span>
+										<button
+											type="button"
+											on:click={() => removeAssigneeFromTask(assignee.id!)}
+											class="text-gray-400 hover:text-red-500 transition-colors"
+											title="Remove assignee"
+										>
+											<X size={14} />
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Add assignee dropdown -->
 						<div class="flex gap-2">
 							<div class="flex-1">
 								<SearchableSelect
-									bind:value={assignee_id}
+									bind:value={assignee_id_to_add}
 									options={[
-										{ value: null, label: $_('taskForm__unassigned') },
-										...assignees
+										{ value: null, label: $_('taskForm__assignee_placeholder') },
+										...availableAssignees
 										.filter((assignee): assignee is typeof assignee & { id: number } => assignee.id !== undefined)
-										.map(assignee => ({ 
-											value: assignee.id, 
+										.map(assignee => ({
+											value: assignee.id,
 											label: assignee.name,
 											badge: true,
 											badgeColor: assignee.color
@@ -736,23 +774,23 @@
 							</div>
 							<button
 								type="button"
+								on:click={addAssigneeToTask}
+								disabled={assignee_id_to_add === null}
+								class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+								title="Add selected assignee"
+							>
+								<Plus size={16} />
+							</button>
+							<button
+								type="button"
 								on:click={() => showAddAssigneeForm = true}
 								class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
 								title={$_('taskForm__add_assignee')}
 							>
-								<Plus size={16} />
+								<User size={16} />
+								<Plus size={12} />
 							</button>
 						</div>
-
-						{#if assignee_id}
-							{@const selectedAssignee = getAssigneeById(assignee_id)}
-							{#if selectedAssignee}
-								<div class="mt-2 flex items-center gap-2 text-sm">
-									<span class="w-3 h-3 rounded-full" style="background-color: {selectedAssignee.color}"></span>
-									<span class="text-gray-600 dark:text-gray-400">{selectedAssignee.name}</span>
-								</div>
-							{/if}
-						{/if}
 					{/if}
 				</div>
 

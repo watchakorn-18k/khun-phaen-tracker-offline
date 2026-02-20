@@ -67,8 +67,9 @@
 	function formatTaskLine(t: Task): string {
 		const icon = statusIcons[t.status] || '📌';
 		let str = `${icon} ${t.title}`;
-		if (t.assignee?.name) {
-			str += ` ${$_('dailyReflect__assignee_prefix')} ${t.assignee.name}`;
+		if (t.assignees && t.assignees.length > 0) {
+			const names = t.assignees.map(a => a.name).join(', ');
+			str += ` ${$_('dailyReflect__assignee_prefix')} ${names}`;
 		}
 		if (t.category && t.category !== 'อื่นๆ' && t.category !== 'Other' && t.category !== 'อื่นๆ (Other)') {
 			str += ` - ${t.category}`;
@@ -139,13 +140,15 @@
 			// Append Discord mentions per task line
 			let discordText = discordFormattedText;
 			for (const t of todayTasks) {
-				if (t.assignee?.discord_id && t.title) {
-					// Find the task line and append mention at the end of it
+				const discordIds = t.assignees?.filter(a => a.discord_id).map(a => a.discord_id) || [];
+				if (discordIds.length > 0 && t.title) {
+					// Find the task line and append mentions at the end of it
 					const escapedTitle = t.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 					const icon = statusIcons[t.status] || '📌';
 					const escapedIcon = icon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 					const taskLineRegex = new RegExp(`(${escapedIcon}\\s*${escapedTitle}[^\\n]*)`);
-					discordText = discordText.replace(taskLineRegex, `$1 <@${t.assignee.discord_id}>`);
+					const mentions = discordIds.map(id => `<@${id}>`).join(' ');
+					discordText = discordText.replace(taskLineRegex, `$1 ${mentions}`);
 				}
 			}
 			

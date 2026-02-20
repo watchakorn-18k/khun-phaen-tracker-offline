@@ -512,6 +512,24 @@ function createTables() {
   } catch (e) {
     // Column already exists
   }
+
+  // Try to add assignee_ids column for multiple assignees
+  try {
+    runSql(`ALTER TABLE tasks ADD COLUMN assignee_ids TEXT DEFAULT NULL`);
+  } catch (e) {
+    // Column already exists
+  }
+
+  // Migrate existing assignee_id to assignee_ids (one-time migration)
+  try {
+    runSql(`
+      UPDATE tasks
+      SET assignee_ids = json_array(assignee_id)
+      WHERE assignee_id IS NOT NULL AND (assignee_ids IS NULL OR assignee_ids = '')
+    `);
+  } catch (e) {
+    // Migration may have already been done
+  }
 }
 
 export async function closeDB(): Promise<void> {
@@ -571,9 +589,14 @@ export async function addTask(
 ): Promise<number> {
   if (!db) throw new Error("DB not initialized");
 
+  // Support both old (assignee_id) and new (assignee_ids) formats
+  const assigneeIds = task.assignee_ids || (task.assignee_id ? [task.assignee_id] : []);
+  const assigneeIdsJson = assigneeIds.length > 0 ? JSON.stringify(assigneeIds) : null;
+  const legacyAssigneeId = assigneeIds.length > 0 ? assigneeIds[0] : null;
+
   runSql(
-    `INSERT INTO tasks (title, project, duration_minutes, date, end_date, status, category, notes, assignee_id, sprint_id, is_archived, checklist)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (title, project, duration_minutes, date, end_date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.title,
       task.project || "",
@@ -583,7 +606,8 @@ export async function addTask(
       task.status,
       task.category || "อื่นๆ",
       task.notes || "",
-      task.assignee_id || null,
+      legacyAssigneeId,
+      assigneeIdsJson,
       task.sprint_id || null,
       task.is_archived ? 1 : 0,
       task.checklist ? JSON.stringify(task.checklist) : null,
@@ -600,6 +624,8 @@ export async function addTask(
     const fullTask: Task = {
       ...task,
       id,
+      assignee_ids: assigneeIds,
+      assignees: [],
       assignee: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -659,6 +685,15 @@ export async function updateTask(
   if (updates.assignee_id !== undefined) {
     sets.push("assignee_id = ?");
     values.push(updates.assignee_id);
+  }
+  // Handle new assignee_ids field
+  if (updates.assignee_ids !== undefined) {
+    const assigneeIds = updates.assignee_ids || [];
+    sets.push("assignee_ids = ?");
+    values.push(assigneeIds.length > 0 ? JSON.stringify(assigneeIds) : null);
+    // Also update legacy assignee_id field for backward compatibility
+    sets.push("assignee_id = ?");
+    values.push(assigneeIds.length > 0 ? assigneeIds[0] : null);
   }
   if (updates.sprint_id !== undefined) {
     sets.push("sprint_id = ?");
@@ -757,22 +792,36 @@ export async function applyCRDTTasksToSQLite(
   let updated = 0;
 
   const columns = hasUpdatedAt
-    ? "id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, updated_at"
-    : "id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist";
+    ? "id, title, project, duration_minutes, date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist, updated_at"
+    : "id, title, project, duration_minutes, date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist";
   const placeholders = hasUpdatedAt
-    ? "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
-    : "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+    ? "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+    : "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
 
   runSql("BEGIN TRANSACTION");
   try {
     for (const task of crdtTasks) {
       if (!task.id) continue;
 
-      // Resolve assignee_id by name if possible
-      let resolvedAssigneeId = task.assignee_id;
-      if (!resolvedAssigneeId && task.assignee?.name) {
-        resolvedAssigneeId = assigneeMap.get(task.assignee.name) || null;
+      // Resolve assignee_ids by name if possible
+      let resolvedAssigneeIds: number[] = [];
+      if (task.assignee_ids && task.assignee_ids.length > 0) {
+        resolvedAssigneeIds = task.assignee_ids;
+      } else if (task.assignees && task.assignees.length > 0) {
+        // Resolve by name
+        resolvedAssigneeIds = task.assignees
+          .map(a => assigneeMap.get(a.name))
+          .filter((id): id is number => id !== undefined);
+      } else if (task.assignee?.name) {
+        // Fallback to legacy single assignee
+        const id = assigneeMap.get(task.assignee.name);
+        if (id) resolvedAssigneeIds = [id];
+      } else if (task.assignee_id) {
+        resolvedAssigneeIds = [task.assignee_id];
       }
+
+      const resolvedAssigneeId = resolvedAssigneeIds.length > 0 ? resolvedAssigneeIds[0] : null;
+      const assigneeIdsJson = resolvedAssigneeIds.length > 0 ? JSON.stringify(resolvedAssigneeIds) : null;
 
       if (existingTaskIds.has(task.id)) {
         updated++;
@@ -790,6 +839,7 @@ export async function applyCRDTTasksToSQLite(
         task.category || "อื่นๆ",
         task.notes || "",
         resolvedAssigneeId,
+        assigneeIdsJson,
         task.sprint_id,
         task.is_archived ? 1 : 0,
         task.checklist ? JSON.stringify(task.checklist) : null,
@@ -832,15 +882,8 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
   const hasUpdatedAt = ensureUpdatedAtColumn();
 
   let query = `
-		SELECT
-			t.*,
-			a.id as a_id,
-			a.name as a_name,
-			a.color as a_color,
-			a.discord_id as a_discord_id,
-			a.created_at as a_created_at
+		SELECT t.*
 		FROM tasks t
-		LEFT JOIN assignees a ON t.assignee_id = a.id
 		WHERE 1=1
 	`;
 
@@ -880,10 +923,18 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
   }
   if (filter?.assignee_id !== undefined && filter.assignee_id !== "all") {
     if (filter.assignee_id === null) {
-      query += ` AND t.assignee_id IS NULL`;
+      query += ` AND (t.assignee_ids IS NULL OR t.assignee_ids = '' OR t.assignee_ids = '[]')`;
     } else {
-      query += ` AND t.assignee_id = ?`;
-      params.push(filter.assignee_id);
+      // Check if assignee_id exists in the JSON array using SQLite JSON functions
+      // This uses json_each to properly check if the ID exists in the array
+      query += ` AND (
+        EXISTS (
+          SELECT 1 FROM json_each(COALESCE(t.assignee_ids, '[]'))
+          WHERE json_each.value = ?
+        )
+        OR t.assignee_id = ?
+      )`;
+      params.push(filter.assignee_id, filter.assignee_id);
     }
   }
   if (filter?.sprint_id !== undefined && filter.sprint_id !== "all") {
@@ -914,10 +965,60 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 
   const result = execQuery(query, params);
 
-  return result.values.map((row) => {
-    const obj = Object.fromEntries(
+  // Collect all assignee IDs from all tasks
+  const allAssigneeIds = new Set<number>();
+  const taskData = result.values.map((row) => {
+    const obj: any = Object.fromEntries(
       result.columns.map((col, i) => [col, row[i]]),
     );
+
+    // Parse assignee_ids from JSON
+    let assigneeIds: number[] = [];
+    if (obj.assignee_ids) {
+      try {
+        assigneeIds = JSON.parse(obj.assignee_ids as string);
+        assigneeIds.forEach(id => allAssigneeIds.add(id));
+      } catch (e) {
+        // Invalid JSON, fallback to legacy assignee_id
+        if (obj.assignee_id) {
+          assigneeIds = [obj.assignee_id as number];
+          allAssigneeIds.add(obj.assignee_id as number);
+        }
+      }
+    } else if (obj.assignee_id) {
+      // Fallback to legacy assignee_id
+      assigneeIds = [obj.assignee_id as number];
+      allAssigneeIds.add(obj.assignee_id as number);
+    }
+
+    obj.assignee_ids = assigneeIds;
+    return obj;
+  });
+
+  // Batch fetch all assignees
+  const assigneesMap = new Map<number, Assignee>();
+  if (allAssigneeIds.size > 0) {
+    const assigneesResult = execQuery(
+      `SELECT * FROM assignees WHERE id IN (${Array.from(allAssigneeIds).join(',')})`,
+    );
+    assigneesResult.values.forEach((row) => {
+      const assigneeObj = Object.fromEntries(
+        assigneesResult.columns.map((col, i) => [col, row[i]]),
+      );
+      assigneesMap.set(assigneeObj.id as number, {
+        id: assigneeObj.id as number,
+        name: assigneeObj.name as string,
+        color: assigneeObj.color as string,
+        discord_id: assigneeObj.discord_id as string | undefined,
+        created_at: assigneeObj.created_at as string,
+      });
+    });
+  }
+
+  // Map tasks with their assignees
+  return taskData.map((obj) => {
+    const assignees = obj.assignee_ids.map((id: number) => assigneesMap.get(id)).filter(Boolean) as Assignee[];
+
     return {
       id: obj.id as number,
       title: obj.title as string,
@@ -928,18 +1029,13 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
       status: obj.status as Task["status"],
       category: obj.category as string,
       notes: obj.notes as string,
+      assignee_ids: obj.assignee_ids,
+      assignees: assignees,
+      // Keep legacy fields for backward compatibility
       assignee_id: obj.assignee_id as number | null,
+      assignee: assignees.length > 0 ? assignees[0] : null,
       sprint_id: obj.sprint_id as number | null,
       is_archived: obj.is_archived === 1,
-      assignee: obj.a_id
-        ? {
-            id: obj.a_id as number,
-            name: obj.a_name as string,
-            color: obj.a_color as string,
-            discord_id: obj.a_discord_id as string | undefined,
-            created_at: obj.a_created_at as string,
-          }
-        : null,
       created_at: obj.created_at as string,
       updated_at: (obj.updated_at || obj.created_at) as string,
       checklist: obj.checklist
@@ -952,26 +1048,48 @@ export async function getTasks(filter?: FilterOptions): Promise<Task[]> {
 export async function getTaskById(id: number): Promise<Task | null> {
   if (!db) throw new Error("DB not initialized");
 
-  const result = execQuery(
-    `
-		SELECT 
-			t.*,
-			a.id as a_id,
-			a.name as a_name,
-			a.color as a_color,
-			a.discord_id as a_discord_id,
-			a.created_at as a_created_at
-		FROM tasks t
-		LEFT JOIN assignees a ON t.assignee_id = a.id
-		WHERE t.id = ?
-	`,
-    [id],
-  );
+  const result = execQuery(`SELECT t.* FROM tasks t WHERE t.id = ?`, [id]);
 
   if (result.values.length === 0) return null;
 
   const row = result.values[0];
-  const obj = Object.fromEntries(result.columns.map((col, i) => [col, row[i]]));
+  const obj: any = Object.fromEntries(result.columns.map((col, i) => [col, row[i]]));
+
+  // Parse assignee_ids from JSON
+  let assigneeIds: number[] = [];
+  if (obj.assignee_ids) {
+    try {
+      assigneeIds = JSON.parse(obj.assignee_ids as string);
+    } catch (e) {
+      // Invalid JSON, fallback to legacy assignee_id
+      if (obj.assignee_id) {
+        assigneeIds = [obj.assignee_id as number];
+      }
+    }
+  } else if (obj.assignee_id) {
+    // Fallback to legacy assignee_id
+    assigneeIds = [obj.assignee_id as number];
+  }
+
+  // Fetch assignees
+  const assignees: Assignee[] = [];
+  if (assigneeIds.length > 0) {
+    const assigneesResult = execQuery(
+      `SELECT * FROM assignees WHERE id IN (${assigneeIds.join(',')})`,
+    );
+    assigneesResult.values.forEach((aRow) => {
+      const assigneeObj: any = Object.fromEntries(
+        assigneesResult.columns.map((col, i) => [col, aRow[i]]),
+      );
+      assignees.push({
+        id: assigneeObj.id as number,
+        name: assigneeObj.name as string,
+        color: assigneeObj.color as string,
+        discord_id: assigneeObj.discord_id as string | undefined,
+        created_at: assigneeObj.created_at as string,
+      });
+    });
+  }
 
   return {
     id: obj.id as number,
@@ -983,18 +1101,13 @@ export async function getTaskById(id: number): Promise<Task | null> {
     status: obj.status as Task["status"],
     category: obj.category as string,
     notes: obj.notes as string,
+    assignee_ids: assigneeIds,
+    assignees: assignees,
+    // Keep legacy fields for backward compatibility
     assignee_id: obj.assignee_id as number | null,
+    assignee: assignees.length > 0 ? assignees[0] : null,
     sprint_id: obj.sprint_id as number | null,
     is_archived: obj.is_archived === 1,
-    assignee: obj.a_id
-      ? {
-          id: obj.a_id as number,
-          name: obj.a_name as string,
-          color: obj.a_color as string,
-          discord_id: obj.a_discord_id as string | undefined,
-          created_at: obj.a_created_at as string,
-        }
-      : null,
     created_at: obj.created_at as string,
     updated_at: (obj.updated_at || obj.created_at) as string,
     checklist: obj.checklist ? JSON.parse(obj.checklist as string) : undefined,
@@ -1207,26 +1320,64 @@ export async function getTasksBySprint(sprintId: number): Promise<Task[]> {
   if (!db) throw new Error("DB not initialized");
 
   const result = execQuery(
-    `
-		SELECT 
-			t.*,
-			a.id as a_id,
-			a.name as a_name,
-			a.color as a_color,
-			a.discord_id as a_discord_id,
-			a.created_at as a_created_at
-		FROM tasks t
-		LEFT JOIN assignees a ON t.assignee_id = a.id
-		WHERE t.sprint_id = ?
-		ORDER BY t.date DESC, t.created_at DESC
-	`,
+    `SELECT t.* FROM tasks t WHERE t.sprint_id = ? ORDER BY t.date DESC, t.created_at DESC`,
     [sprintId],
   );
 
-  return result.values.map((row) => {
-    const obj = Object.fromEntries(
+  // Collect all assignee IDs from all tasks
+  const allAssigneeIds = new Set<number>();
+  const taskData = result.values.map((row) => {
+    const obj: any = Object.fromEntries(
       result.columns.map((col, i) => [col, row[i]]),
     );
+
+    // Parse assignee_ids from JSON
+    let assigneeIds: number[] = [];
+    if (obj.assignee_ids) {
+      try {
+        assigneeIds = JSON.parse(obj.assignee_ids as string);
+        assigneeIds.forEach(id => allAssigneeIds.add(id));
+      } catch (e) {
+        // Invalid JSON, fallback to legacy assignee_id
+        if (obj.assignee_id) {
+          assigneeIds = [obj.assignee_id as number];
+          allAssigneeIds.add(obj.assignee_id as number);
+        }
+      }
+    } else if (obj.assignee_id) {
+      // Fallback to legacy assignee_id
+      assigneeIds = [obj.assignee_id as number];
+      allAssigneeIds.add(obj.assignee_id as number);
+    }
+
+    obj.assignee_ids = assigneeIds;
+    return obj;
+  });
+
+  // Batch fetch all assignees
+  const assigneesMap = new Map<number, Assignee>();
+  if (allAssigneeIds.size > 0) {
+    const assigneesResult = execQuery(
+      `SELECT * FROM assignees WHERE id IN (${Array.from(allAssigneeIds).join(',')})`,
+    );
+    assigneesResult.values.forEach((row) => {
+      const assigneeObj: any = Object.fromEntries(
+        assigneesResult.columns.map((col, i) => [col, row[i]]),
+      );
+      assigneesMap.set(assigneeObj.id as number, {
+        id: assigneeObj.id as number,
+        name: assigneeObj.name as string,
+        color: assigneeObj.color as string,
+        discord_id: assigneeObj.discord_id as string | undefined,
+        created_at: assigneeObj.created_at as string,
+      });
+    });
+  }
+
+  // Map tasks with their assignees
+  return taskData.map((obj) => {
+    const assignees = obj.assignee_ids.map((id: number) => assigneesMap.get(id)).filter(Boolean) as Assignee[];
+
     return {
       id: obj.id as number,
       title: obj.title as string,
@@ -1236,18 +1387,13 @@ export async function getTasksBySprint(sprintId: number): Promise<Task[]> {
       status: obj.status as Task["status"],
       category: obj.category as string,
       notes: obj.notes as string,
+      assignee_ids: obj.assignee_ids,
+      assignees: assignees,
+      // Keep legacy fields for backward compatibility
       assignee_id: obj.assignee_id as number | null,
+      assignee: assignees.length > 0 ? assignees[0] : null,
       sprint_id: obj.sprint_id as number | null,
       is_archived: obj.is_archived === 1,
-      assignee: obj.a_id
-        ? {
-            id: obj.a_id as number,
-            name: obj.a_name as string,
-            color: obj.a_color as string,
-            discord_id: obj.a_discord_id as string | undefined,
-            created_at: obj.a_created_at as string,
-          }
-        : null,
       created_at: obj.created_at as string,
       updated_at: (obj.updated_at || obj.created_at) as string,
       checklist: obj.checklist
@@ -1616,10 +1762,28 @@ export async function mergeTasksFromCSV(
       if (!existing) {
         // New task - insert
         try {
+          // Parse assignee_ids if available
+          let assigneeIds: number[] = [];
+          let assigneeId: number | null = null;
+          let assigneeIdsJson: string | null = null;
+
+          if (row.assignee_ids) {
+            try {
+              assigneeIds = JSON.parse(row.assignee_ids);
+            } catch (e) {
+              if (row.assignee_id) assigneeIds = [parseInt(row.assignee_id)];
+            }
+          } else if (row.assignee_id) {
+            assigneeIds = [parseInt(row.assignee_id)];
+          }
+
+          assigneeId = assigneeIds.length > 0 ? assigneeIds[0] : null;
+          assigneeIdsJson = assigneeIds.length > 0 ? JSON.stringify(assigneeIds) : null;
+
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -1629,7 +1793,8 @@ export async function mergeTasksFromCSV(
               row.status || "todo",
               row.category || "อื่นๆ",
               row.notes || "",
-              row.assignee_id ? parseInt(row.assignee_id) : null,
+              assigneeId,
+              assigneeIdsJson,
               row.sprint_id ? parseInt(row.sprint_id) : null,
               row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
               row.checklist || null,
@@ -1645,7 +1810,7 @@ export async function mergeTasksFromCSV(
         const serverDate = new Date(row.created_at || 0).getTime();
         const localDate = new Date(existing.created_at || 0).getTime();
 
-        // Check if content is different (include sprint_id, is_archived and checklist)
+        // Check if content is different (include sprint_id, is_archived, checklist, and assignee_ids)
         const isDifferent =
           row.title !== existing.title ||
           row.status !== existing.status ||
@@ -1655,17 +1820,36 @@ export async function mergeTasksFromCSV(
             existing.sprint_id ||
           (row.is_archived === "1" || row.is_archived === "true") !==
             (existing.is_archived === 1) ||
-          (row.checklist || null) !== (existing.checklist || null);
+          (row.checklist || null) !== (existing.checklist || null) ||
+          (row.assignee_ids || null) !== (existing.assignee_ids || null);
 
         if (isDifferent && serverDate >= localDate) {
           // Server version is newer or same age but different - update
           try {
+            // Parse assignee_ids if available
+            let assigneeIds: number[] = [];
+            let assigneeId: number | null = null;
+            let assigneeIdsJson: string | null = null;
+
+            if (row.assignee_ids) {
+              try {
+                assigneeIds = JSON.parse(row.assignee_ids);
+              } catch (e) {
+                if (row.assignee_id) assigneeIds = [parseInt(row.assignee_id)];
+              }
+            } else if (row.assignee_id) {
+              assigneeIds = [parseInt(row.assignee_id)];
+            }
+
+            assigneeId = assigneeIds.length > 0 ? assigneeIds[0] : null;
+            assigneeIdsJson = assigneeIds.length > 0 ? JSON.stringify(assigneeIds) : null;
+
             runSql(
               `
-							UPDATE tasks 
-							SET title = ?, project = ?, duration_minutes = ?, 
-							    date = ?, status = ?, category = ?, notes = ?, 
-							    assignee_id = ?, sprint_id = ?, is_archived = ?, checklist = ?, created_at = ?
+							UPDATE tasks
+							SET title = ?, project = ?, duration_minutes = ?,
+							    date = ?, status = ?, category = ?, notes = ?,
+							    assignee_id = ?, assignee_ids = ?, sprint_id = ?, is_archived = ?, checklist = ?, created_at = ?
 							WHERE id = ?
 						`,
               [
@@ -1676,7 +1860,8 @@ export async function mergeTasksFromCSV(
                 row.status || "todo",
                 row.category || "อื่นๆ",
                 row.notes || "",
-                row.assignee_id ? parseInt(row.assignee_id) : null,
+                assigneeId,
+                assigneeIdsJson,
                 row.sprint_id ? parseInt(row.sprint_id) : null,
                 row.is_archived === "1" || row.is_archived === "true" ? 1 : 0,
                 row.checklist || null,
@@ -1748,15 +1933,23 @@ export interface AllData {
 export async function exportAllData(): Promise<string> {
   if (!db) throw new Error("DB not initialized");
 
-  // Get tasks with assignee names
+  // Get tasks
   const tasksResult = execQuery(`
-		SELECT t.*, a.name as assignee_name 
-		FROM tasks t 
-		LEFT JOIN assignees a ON t.assignee_id = a.id 
+		SELECT t.*
+		FROM tasks t
 		ORDER BY t.date DESC, t.created_at DESC
 	`);
   const projectsResult = execQuery("SELECT * FROM projects ORDER BY name");
   const assigneesResult = execQuery("SELECT * FROM assignees ORDER BY name");
+
+  // Build assignee map for name lookup
+  const assigneeMap = new Map<number, string>();
+  for (const row of assigneesResult.values) {
+    const obj = Object.fromEntries(
+      assigneesResult.columns.map((col, i) => [col, row[i]]),
+    );
+    assigneeMap.set(obj.id, obj.name);
+  }
 
   // Get sprints from localStorage
   let sprints: any[] = [];
@@ -1771,7 +1964,7 @@ export async function exportAllData(): Promise<string> {
     }
   }
 
-  // Build tasks CSV section with assignee_name, sprint_id, is_archived
+  // Build tasks CSV section with assignee_ids and assignee_names
   const taskHeaders = [
     "id",
     "title",
@@ -1782,7 +1975,8 @@ export async function exportAllData(): Promise<string> {
     "category",
     "notes",
     "assignee_id",
-    "assignee_name",
+    "assignee_ids",
+    "assignee_names",
     "sprint_id",
     "is_archived",
     "checklist",
@@ -1797,9 +1991,26 @@ export async function exportAllData(): Promise<string> {
   csvRows.push(taskHeaders.join(","));
 
   for (const row of tasksResult.values) {
-    const obj = Object.fromEntries(
+    const obj: any = Object.fromEntries(
       tasksResult.columns.map((col, i) => [col, row[i]]),
     );
+
+    // Parse assignee_ids and get names
+    let assigneeIds: number[] = [];
+    if (obj.assignee_ids) {
+      try {
+        assigneeIds = JSON.parse(obj.assignee_ids);
+      } catch (e) {
+        // Fallback to single assignee_id
+        if (obj.assignee_id) assigneeIds = [obj.assignee_id];
+      }
+    } else if (obj.assignee_id) {
+      assigneeIds = [obj.assignee_id];
+    }
+
+    const assigneeNames = assigneeIds.map(id => assigneeMap.get(id) || '').filter(Boolean).join('|');
+    obj.assignee_names = assigneeNames;
+
     const values = taskHeaders.map((h) => {
       const val = obj[h];
       if (val === null || val === undefined) return "";
@@ -2198,38 +2409,69 @@ export async function importAllData(
       assigneeNameToId.set(obj.name, obj.id);
     }
 
-    // Import tasks (with assignee_name support)
+    // Import tasks (with assignee_names support for multiple assignees)
     for (const row of taskRows) {
       try {
-        // Resolve assignee_id from assignee_name if provided
-        let assigneeId: number | null = null;
-        if (row.assignee_id) {
-          assigneeId = parseInt(row.assignee_id);
+        // Resolve assignee_ids from assignee_names if provided
+        let assigneeIds: number[] = [];
+
+        // Try assignee_ids first (JSON array)
+        if (row.assignee_ids) {
+          try {
+            assigneeIds = JSON.parse(row.assignee_ids);
+          } catch (e) {
+            // Invalid JSON, try single ID
+            if (row.assignee_id) {
+              assigneeIds = [parseInt(row.assignee_id)];
+            }
+          }
+        } else if (row.assignee_names && row.assignee_names.trim()) {
+          // Parse multiple assignee names (pipe-separated)
+          const names = row.assignee_names.split('|').map((n: string) => n.trim()).filter(Boolean);
+          for (const name of names) {
+            const existingId = assigneeNameToId.get(name);
+            if (existingId) {
+              assigneeIds.push(existingId);
+            } else {
+              // Create new assignee
+              runSql(
+                `INSERT INTO assignees (name, color, created_at) VALUES (?, ?, ?)`,
+                [name, "#6366F1", new Date().toISOString()],
+              );
+              const newAssigneeResult = execQuery("SELECT last_insert_rowid() as id");
+              const newId = Number(newAssigneeResult.values[0][0]);
+              if (newId) {
+                assigneeIds.push(newId);
+                assigneeNameToId.set(name, newId);
+                assigneesImported++;
+              }
+            }
+          }
         } else if (row.assignee_name && row.assignee_name.trim()) {
-          // Try to find existing assignee by name
+          // Fallback to single assignee_name (legacy)
           const existingId = assigneeNameToId.get(row.assignee_name.trim());
           if (existingId) {
-            assigneeId = existingId;
+            assigneeIds = [existingId];
           } else {
-            // Create new assignee
             runSql(
-              `
-							INSERT INTO assignees (name, color, created_at)
-							VALUES (?, ?, ?)
-						`,
+              `INSERT INTO assignees (name, color, created_at) VALUES (?, ?, ?)`,
               [row.assignee_name.trim(), "#6366F1", new Date().toISOString()],
             );
-            // Get the new assignee id
-            const newAssigneeResult = execQuery(
-              "SELECT last_insert_rowid() as id",
-            );
-            assigneeId = Number(newAssigneeResult.values[0][0]) || null;
-            if (assigneeId !== null) {
-              assigneeNameToId.set(row.assignee_name.trim(), assigneeId);
+            const newAssigneeResult = execQuery("SELECT last_insert_rowid() as id");
+            const newId = Number(newAssigneeResult.values[0][0]);
+            if (newId) {
+              assigneeIds = [newId];
+              assigneeNameToId.set(row.assignee_name.trim(), newId);
+              assigneesImported++;
             }
-            assigneesImported++;
           }
+        } else if (row.assignee_id) {
+          // Fallback to assignee_id
+          assigneeIds = [parseInt(row.assignee_id)];
         }
+
+        const assigneeId = assigneeIds.length > 0 ? assigneeIds[0] : null;
+        const assigneeIdsJson = assigneeIds.length > 0 ? JSON.stringify(assigneeIds) : null;
 
         // Check if we should use existing ID or create new one
         const rowId = row.id ? parseInt(row.id) : null;
@@ -2245,8 +2487,8 @@ export async function importAllData(
           // Use REPLACE for sync with existing IDs
           runSql(
             `
-						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, created_at, end_date)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						REPLACE INTO tasks (id, title, project, duration_minutes, date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist, created_at, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               rowId,
@@ -2258,6 +2500,7 @@ export async function importAllData(
               row.category || "อื่นๆ",
               row.notes || "",
               assigneeId,
+              assigneeIdsJson,
               sprintId,
               isArchived,
               row.checklist || null,
@@ -2269,8 +2512,8 @@ export async function importAllData(
           // Always INSERT as new task (ignore ID from file)
           runSql(
             `
-						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, sprint_id, is_archived, checklist, end_date)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						INSERT INTO tasks (title, project, duration_minutes, date, status, category, notes, assignee_id, assignee_ids, sprint_id, is_archived, checklist, end_date)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`,
             [
               row.title || "",
@@ -2281,6 +2524,7 @@ export async function importAllData(
               row.category || "อื่นๆ",
               row.notes || "",
               assigneeId,
+              assigneeIdsJson,
               sprintId,
               isArchived,
               row.checklist || null,

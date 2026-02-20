@@ -1218,7 +1218,18 @@
 
 	function getFilteredExportContext() {
 		const taskSnapshot = [...tasks];
-		const visibleAssigneeIds = new Set(taskSnapshot.map((task) => task.assignee_id).filter((id): id is number => id !== null && id !== undefined));
+
+		// Collect all assignee IDs from tasks (supporting multiple assignees)
+		const visibleAssigneeIds = new Set<number>();
+		for (const task of taskSnapshot) {
+			if (task.assignee_ids && task.assignee_ids.length > 0) {
+				task.assignee_ids.forEach(id => visibleAssigneeIds.add(id));
+			} else if (task.assignee_id) {
+				// Fallback to legacy single assignee
+				visibleAssigneeIds.add(task.assignee_id);
+			}
+		}
+
 		const visibleProjectNames = new Set(taskSnapshot.map((task) => (task.project || '').trim()).filter((name) => name.length > 0));
 		const visibleSprintIds = new Set(taskSnapshot.map((task) => task.sprint_id).filter((id): id is number => id !== null && id !== undefined));
 

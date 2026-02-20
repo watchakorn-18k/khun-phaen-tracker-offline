@@ -89,32 +89,41 @@
 		);
 
 		for (const task of filtered) {
-			const key = task.assignee_id ?? null;
-			const assignee = key === null ? null : assigneeById.get(key);
-			if (!map.has(key)) {
-				map.set(key, {
-					assigneeId: key,
-					assigneeName: assignee?.name ?? $_('page__unassigned'),
-					color: assignee?.color ?? '#94a3b8',
-					total: 0,
-					todo: 0,
-					inProgress: 0,
-					inTest: 0,
-					done: 0,
-					overdue: 0,
-					totalMinutes: 0,
-					activeLoadScore: 0
-				});
+			// Support multiple assignees
+			const assigneeIds = task.assignee_ids || (task.assignee_id ? [task.assignee_id] : [null]);
+
+			// If no assignees, still count as unassigned
+			if (assigneeIds.length === 0) {
+				assigneeIds.push(null);
 			}
 
-			const row = map.get(key)!;
-			row.total += 1;
-			row.totalMinutes += task.duration_minutes || 0;
-			if (task.status === 'todo') row.todo += 1;
-			if (task.status === 'in-progress') row.inProgress += 1;
-			if (task.status === 'in-test') row.inTest += 1;
-			if (task.status === 'done') row.done += 1;
-			if (isOverdue(task)) row.overdue += 1;
+			for (const key of assigneeIds) {
+				const assignee = key === null ? null : assigneeById.get(key);
+				if (!map.has(key)) {
+					map.set(key, {
+						assigneeId: key,
+						assigneeName: assignee?.name ?? $_('page__unassigned'),
+						color: assignee?.color ?? '#94a3b8',
+						total: 0,
+						todo: 0,
+						inProgress: 0,
+						inTest: 0,
+						done: 0,
+						overdue: 0,
+						totalMinutes: 0,
+						activeLoadScore: 0
+					});
+				}
+
+				const row = map.get(key)!;
+				row.total += 1;
+				row.totalMinutes += task.duration_minutes || 0;
+				if (task.status === 'todo') row.todo += 1;
+				if (task.status === 'in-progress') row.inProgress += 1;
+				if (task.status === 'in-test') row.inTest += 1;
+				if (task.status === 'done') row.done += 1;
+				if (isOverdue(task)) row.overdue += 1;
+			}
 		}
 
 		for (const row of map.values()) {

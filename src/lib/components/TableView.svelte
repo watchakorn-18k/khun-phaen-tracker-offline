@@ -53,8 +53,9 @@
 
 		switch (sortColumn) {
 			case 'assignee':
-				aVal = a.assignee?.name || '';
-				bVal = b.assignee?.name || '';
+				// Sort by first assignee's name, or empty if no assignees
+				aVal = a.assignees && a.assignees.length > 0 ? a.assignees[0].name : '';
+				bVal = b.assignees && b.assignees.length > 0 ? b.assignees[0].name : '';
 				break;
 			default:
 				aVal = a[sortColumn] || '';
@@ -455,17 +456,24 @@
 							</span>
 						</td>
 						<td class="px-3 py-2 lg:px-4 lg:py-3">
-							{#if task.assignee}
-								<div class="flex items-center gap-1.5 lg:gap-2">
-									<div
-										class="w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0"
-										style="background-color: {task.assignee.color || '#6366F1'}"
-									>
-										{task.assignee.name.charAt(0)}
-									</div>
-									<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 truncate max-w-15 lg:max-w-25" title={task.assignee.name}>
-										{task.assignee.name}
-									</span>
+							{#if task.assignees && task.assignees.length > 0}
+								<div class="flex items-center gap-1 lg:gap-1.5 flex-wrap">
+									{#each task.assignees as assignee, idx}
+										<div
+											class="w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0 {idx > 0 ? '-ml-1 lg:-ml-2' : ''}"
+											style="background-color: {assignee.color || '#6366F1'}"
+											title={assignee.name}
+										>
+											{assignee.name.charAt(0)}
+										</div>
+									{/each}
+									{#if task.assignees.length === 1}
+										<span class="text-xs lg:text-sm text-gray-700 dark:text-gray-300 truncate max-w-15 lg:max-w-25" title={task.assignees[0].name}>
+											{task.assignees[0].name}
+										</span>
+									{:else if task.assignees.length > 1}
+										<span class="text-xs text-gray-500 dark:text-gray-400">+{task.assignees.length - 1}</span>
+									{/if}
 								</div>
 							{:else}
 								<span class="text-gray-400 dark:text-gray-500 text-sm">-</span>
@@ -669,15 +677,19 @@
 											<span class="text-xs text-gray-700 dark:text-gray-300">{task.category || $_('tableView__category_other')}</span>
 										</div>
 
-										{#if task.assignee}
-											<div class="flex items-center gap-2">
-												<div
-													class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium text-white"
-													style="background-color: {task.assignee.color || '#6366F1'}"
-												>
-													{task.assignee.name.charAt(0)}
-												</div>
-												<span class="text-xs text-gray-700 dark:text-gray-300">{task.assignee.name}</span>
+										{#if task.assignees && task.assignees.length > 0}
+											<div class="flex items-center gap-1.5 flex-wrap">
+												{#each task.assignees as assignee}
+													<div class="flex items-center gap-1.5">
+														<div
+															class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium text-white"
+															style="background-color: {assignee.color || '#6366F1'}"
+														>
+															{assignee.name.charAt(0)}
+														</div>
+														<span class="text-xs text-gray-700 dark:text-gray-300">{assignee.name}</span>
+													</div>
+												{/each}
 											</div>
 										{/if}
 

@@ -264,11 +264,15 @@
 								</span>
 							{/if}
 							<span class="px-1.5 py-0.5 {getCategoryBadgeClass(status)} rounded">{task.category}</span>
-							{#if task.assignee}
-								<span class="flex items-center gap-1" title={task.assignee.name}>
-									<span class="w-2 h-2 rounded-full" style="background-color: {task.assignee.color}"></span>
-									<span class="truncate max-w-15">{task.assignee.name}</span>
-								</span>
+							{#if task.assignees && task.assignees.length > 0}
+								<div class="flex items-center gap-1 flex-wrap">
+									{#each task.assignees as assignee}
+										<span class="flex items-center gap-1" title={assignee.name}>
+											<span class="w-2 h-2 rounded-full" style="background-color: {assignee.color}"></span>
+											<span class="truncate max-w-15">{assignee.name}</span>
+										</span>
+									{/each}
+								</div>
 							{/if}
 						</div>
 						
