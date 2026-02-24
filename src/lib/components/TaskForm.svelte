@@ -3,13 +3,15 @@
 	import { browser } from '$app/environment';
 	import type { Task, Project, Assignee, Sprint, ChecklistItem } from '$lib/types';
 	import { CATEGORIES } from '$lib/types';
-	import { Calendar, FileText, Tag, CheckCircle, User, Plus, Folder, X, Flag, GitBranch, GitPullRequest, Copy, Check, Trash2, CheckSquare, Square, ListTodo, ExternalLink } from 'lucide-svelte';
+	import { Calendar, FileText, Tag, CheckCircle, Folder, X, GitBranch, GitPullRequest, ExternalLink } from 'lucide-svelte';
 	import { taskDefaults } from '$lib/stores/taskDefaults';
 	import { _ } from 'svelte-i18n';
 	import SearchableSelect from './SearchableSelect.svelte';
 	import CustomDatePicker from './CustomDatePicker.svelte';
-	import SearchableSprintSelect from './SearchableSprintSelect.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
+	import BranchDialog from './BranchDialog.svelte';
+	import ChecklistManager from './ChecklistManager.svelte';
+	import AssigneeSelector from './AssigneeSelector.svelte';
 
 	const dispatch = createEventDispatcher<{
 		submit: Omit<Task, 'id' | 'created_at'>;
@@ -33,70 +35,12 @@
 	let category = editingTask?.category || 'งานหลัก';
 	let notes = editingTask?.notes || '';
 	let assignee_ids: number[] = editingTask?.assignee_ids || (editingTask?.assignee_id ? [editingTask.assignee_id] : []);
-	let assignee_id_to_add: number | null = null; // For selecting new assignee to add
 	let sprint_id: number | null = editingTask?.sprint_id || null;
 	let checklist: ChecklistItem[] = [];
-	let newChecklistItem = '';
-	let isAddingChecklistItem = false;
-	let deletingChecklistItemId: string | null = null;
-	let checklistVisibleCount = 10;
-	let checklistSelectMode = false;
-	let selectedChecklistIds: Set<string> = new Set();
-	$: completedCount = checklist.filter(i => i.completed).length;
-	$: progress = checklist.length > 0 ? Math.round((completedCount / checklist.length) * 100) : 0;
-	$: visibleChecklist = checklist.slice(0, checklistVisibleCount);
-	$: hasMoreChecklist = checklist.length > checklistVisibleCount;
-
-	$: activeSprint = sprints.find(s => s.status === 'active');
-
-	// New assignee form state
-	let showAddAssigneeForm = false;
-	let newAssigneeName = '';
-	let newAssigneeColor = '#6366F1';
-
-	const colorOptions = [
-		'#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E',
-		'#10B981', '#14B8A6', '#06B6D4', '#0EA5E9', '#3B82F6',
-		'#6366F1', '#8B5CF6', '#A855F7', '#D946EF', '#EC4899',
-		'#F43F5E', '#78716C', '#6B7280', '#4B5563', '#1F2937'
-	];
-
-	const gitFlowTypes = ['feature', 'bugfix', 'hotfix', 'release'] as const;
-	type GitFlowType = typeof gitFlowTypes[number];
-
-	interface BuiltInTranslatorInstance {
-		translate(input: string): Promise<string>;
-		destroy?: () => void;
-	}
-
-	interface BuiltInTranslator {
-		availability?: (options: { sourceLanguage: string; targetLanguage: string }) => Promise<string>;
-		create: (options: { sourceLanguage: string; targetLanguage: string }) => Promise<BuiltInTranslatorInstance>;
-	}
-
-	const TRANSLATOR_OPTIONS = {
-		sourceLanguage: 'th',
-		targetLanguage: 'en'
-	} as const;
-
-	let gitFlowType: GitFlowType = 'feature';
-	let translatedTitle = '';
-	let branchSlug = '';
-	let branchMessage = 'พิมพ์ชื่องาน แล้วระบบจะช่วยสร้างชื่อ branch';
-	let branchMessageType: 'info' | 'success' | 'error' = 'info';
-	let isTranslatingBranch = false;
-	let copySucceeded = false;
-	let branchName = 'feature/untitled-task';
-
-	let translator: BuiltInTranslatorInstance | null = null;
-	let translatorInitPromise: Promise<BuiltInTranslatorInstance | null> | null = null;
-	let branchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
-	let branchRequestId = 0;
 	let showBranchDialog = false;
 	let formInitKey = 'closed';
 
-	$: branchName = `${gitFlowType}/${branchSlug || 'untitled-task'}`;
+	$: activeSprint = sprints.find(s => s.status === 'active');
 
 	// Get the current project's repo_url
 	$: currentProjectRepoUrl = (() => {
@@ -115,281 +59,26 @@
 		// Normalise: strip trailing slash and .git
 		let base = currentProjectRepoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
 
-		const branch = branchName;
-
+		// For PR, we'll use the branch name from the dialog (if available)
+		// For now, just open the compare/new PR page
 		if (base.includes('github.com')) {
-			// GitHub: /compare/<branch>?expand=1
-			return `${base}/compare/${encodeURIComponent(branch)}?expand=1`;
+			return `${base}/compare?expand=1`;
 		}
 
 		if (base.includes('gitlab.com') || base.includes('gitlab')) {
-			// GitLab: /-/merge_requests/new?merge_request[source_branch]=<branch>
-			return `${base}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${encodeURIComponent(branch)}`;
+			return `${base}/-/merge_requests/new`;
 		}
 
 		if (base.includes('bitbucket.org') || base.includes('bitbucket')) {
-			// Bitbucket: /pull-requests/new?source=<branch>
-			return `${base}/pull-requests/new?source=${encodeURIComponent(branch)}`;
+			return `${base}/pull-requests/new`;
 		}
 
-		// Fallback: just open the repo
 		return base;
 	}
 
 	function openPullRequest() {
 		const url = getPullRequestUrl();
 		if (url) window.open(url, '_blank', 'noopener,noreferrer');
-	}
-
-	function getTranslatorApi(): BuiltInTranslator | null {
-		if (typeof window === 'undefined') return null;
-		const maybeTranslator = (window as unknown as { Translator?: BuiltInTranslator }).Translator;
-		if (!maybeTranslator || typeof maybeTranslator.create !== 'function') return null;
-		return maybeTranslator;
-	}
-
-	async function createTranslatorInstance(): Promise<BuiltInTranslatorInstance | null> {
-		const translatorApi = getTranslatorApi();
-		if (!translatorApi) return null;
-
-		try {
-			if (typeof translatorApi.availability === 'function') {
-				const availability = await translatorApi.availability(TRANSLATOR_OPTIONS);
-				if (availability === 'unavailable') return null;
-			}
-			return await translatorApi.create(TRANSLATOR_OPTIONS);
-		} catch (error) {
-			console.warn('Translator API unavailable:', error);
-			return null;
-		}
-	}
-
-	async function getOrCreateTranslator(): Promise<BuiltInTranslatorInstance | null> {
-		if (translator) return translator;
-		if (!translatorInitPromise) {
-			translatorInitPromise = createTranslatorInstance()
-				.then((instance) => {
-					translator = instance;
-					return instance;
-				})
-				.finally(() => {
-					translatorInitPromise = null;
-				});
-		}
-		return translatorInitPromise;
-	}
-
-	function slugifyBranchSegment(input: string): string {
-		if (!input || !input.trim()) return "";
-		
-		return input
-			.normalize("NFKD")
-			.replace(/[\u0300-\u036f]/g, "")
-			.replace(/["']/g, "")
-			.toLowerCase()
-			.trim()
-			.replace(/&/g, " and ")
-			.replace(/\s+/g, "-")              // Replace spaces with hyphens explicitly
-			.replace(/[^a-z0-9-]+/g, "-")       // Replace other non-alphanumeric (except hyphens)
-			.replace(/-{2,}/g, "-")             // Collapse multiple hyphens
-			.replace(/^-+|-+$/g, "");           // Trim leading/trailing hyphens
-	}
-
-	function getBranchMessageClass(): string {
-		if (branchMessageType === 'error') return 'text-danger';
-		if (branchMessageType === 'success') return 'text-success';
-		return 'text-gray-500 dark:text-gray-400';
-	}
-
-	function clearCopyFeedbackTimer() {
-		if (!copyFeedbackTimer) return;
-		clearTimeout(copyFeedbackTimer);
-		copyFeedbackTimer = null;
-	}
-
-	function clearBranchDebounceTimer() {
-		if (!branchDebounceTimer) return;
-		clearTimeout(branchDebounceTimer);
-		branchDebounceTimer = null;
-	}
-
-	function resetBranchHelper() {
-		clearBranchDebounceTimer();
-		clearCopyFeedbackTimer();
-		branchRequestId += 1;
-		gitFlowType = 'feature';
-		translatedTitle = '';
-		branchSlug = '';
-		branchMessage = 'พิมพ์ชื่องาน แล้วระบบจะช่วยสร้างชื่อ branch';
-		branchMessageType = 'info';
-		isTranslatingBranch = false;
-		copySucceeded = false;
-	}
-
-	// Free translation API using MyMemory (1000 words/day free, no key required)
-	// Falls back to Chrome Translator API if available
-	async function translateTitle(input: string): Promise<{ text: string; translated: boolean }> {
-		const cleaned = input.trim();
-		if (!cleaned) return { text: '', translated: false };
-
-		// Check if text is already English (only ASCII characters)
-		const isEnglish = /^[\x00-\x7F]+$/.test(cleaned.replace(/\s/g, ''));
-		if (isEnglish) return { text: cleaned, translated: false };
-
-		// Try MyMemory API first (works on all browsers)
-		try {
-			const encodedText = encodeURIComponent(cleaned);
-			const response = await fetch(
-				`https://api.mymemory.translated.net/get?q=${encodedText}&langpair=th|en`,
-				{ signal: AbortSignal.timeout(5000) }
-			);
-			
-			if (response.ok) {
-				const data = await response.json();
-				if (data.responseStatus === 200 && data.responseData?.translatedText) {
-					const translatedText = data.responseData.translatedText.trim();
-					if (translatedText && translatedText.toLowerCase() !== cleaned.toLowerCase()) {
-						return { text: translatedText, translated: true };
-					}
-				}
-			}
-		} catch (error) {
-			console.warn('MyMemory API failed:', error);
-		}
-
-		// Fallback to Chrome Translator API if available
-		const translatorInstance = await getOrCreateTranslator();
-		if (translatorInstance) {
-			try {
-				const translatedText = (await translatorInstance.translate(cleaned)).trim();
-				if (translatedText) return { text: translatedText, translated: true };
-			} catch (error) {
-				console.warn('Chrome Translator API failed:', error);
-			}
-		}
-
-		// Final fallback: use original text with basic transliteration
-		return { text: cleaned, translated: false };
-	}
-
-	async function updateBranchPreview(rawTitle: string) {
-		const cleanedTitle = rawTitle.trim();
-		const requestId = ++branchRequestId;
-
-		if (!cleanedTitle) {
-			translatedTitle = '';
-			branchSlug = '';
-			branchMessage = 'พิมพ์ชื่องาน แล้วระบบจะช่วยสร้างชื่อ branch';
-			branchMessageType = 'info';
-			isTranslatingBranch = false;
-			return;
-		}
-
-		isTranslatingBranch = true;
-		branchMessage = 'กำลังแปลชื่อ task เป็นภาษาอังกฤษ...';
-		branchMessageType = 'info';
-
-		const { text, translated } = await translateTitle(cleanedTitle);
-		if (requestId !== branchRequestId) return;
-
-		translatedTitle = text;
-		branchSlug = slugifyBranchSegment(text) || 'untitled-task';
-		isTranslatingBranch = false;
-
-		if (translated) {
-			branchMessage = 'แปลเป็นภาษาอังกฤษแล้ว';
-			branchMessageType = 'success';
-		} else {
-			branchMessage = 'ใช้ชื่อเดิม (ภาษาไทยหรือแปลไม่สำเร็จ)';
-			branchMessageType = 'info';
-		}
-	}
-
-	function queueBranchPreviewUpdate(rawTitle: string) {
-		clearBranchDebounceTimer();
-
-		if (!rawTitle.trim()) {
-			void updateBranchPreview(rawTitle);
-			return;
-		}
-
-		branchDebounceTimer = setTimeout(() => {
-			void updateBranchPreview(rawTitle);
-		}, 300);
-	}
-
-	function openBranchDialog() {
-		showBranchDialog = true;
-		copySucceeded = false;
-		clearCopyFeedbackTimer();
-		void getOrCreateTranslator();
-		queueBranchPreviewUpdate(title);
-	}
-
-	function closeBranchDialog() {
-		showBranchDialog = false;
-	}
-
-	async function handleCopyBranchName() {
-		const cleanedTitle = title.trim();
-		if (!cleanedTitle) return;
-
-		await getOrCreateTranslator();
-		await updateBranchPreview(cleanedTitle);
-
-		if (!navigator.clipboard?.writeText) {
-			branchMessage = 'เบราว์เซอร์ไม่รองรับการคัดลอกอัตโนมัติ';
-			branchMessageType = 'error';
-			return;
-		}
-
-		try {
-			await navigator.clipboard.writeText(branchName);
-			copySucceeded = true;
-			branchMessage = `คัดลอกแล้ว: ${branchName}`;
-			branchMessageType = 'success';
-			clearCopyFeedbackTimer();
-			copyFeedbackTimer = setTimeout(() => {
-				copySucceeded = false;
-			}, 2000);
-		} catch (error) {
-			console.error('Copy branch failed:', error);
-			branchMessage = 'คัดลอกไม่สำเร็จ กรุณาลองใหม่';
-			branchMessageType = 'error';
-		}
-	}
-
-	function addChecklistItem() {
-		if (!newChecklistItem.trim()) return;
-		checklist = [
-			...checklist,
-			{
-				id: Date.now().toString() + Math.random().toString(36).substring(2),
-				text: newChecklistItem.trim(),
-				completed: false
-			}
-		];
-		newChecklistItem = '';
-		if (editingTask) dispatch('checklistUpdate', { checklist });
-	}
-
-	function removeChecklistItem(id: string) {
-		checklist = checklist.filter((item) => item.id !== id);
-		if (editingTask) dispatch('checklistUpdate', { checklist });
-	}
-
-	function toggleChecklistItem(id: string) {
-		checklist = checklist.map((item) =>
-			item.id === id ? { ...item, completed: !item.completed } : item
-		);
-		if (editingTask) dispatch('checklistUpdate', { checklist });
-	}
-
-	function handleChecklistKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			addChecklistItem();
-		}
 	}
 
 	function initializeFormState() {
@@ -419,15 +108,6 @@
 			checklist = [];
 		}
 
-		resetBranchHelper();
-		showAddAssigneeForm = false;
-		newAssigneeName = '';
-		newAssigneeColor = '#6366F1';
-		newChecklistItem = '';
-		checklistVisibleCount = 10;
-		assignee_id_to_add = null;
-		checklistSelectMode = false;
-		selectedChecklistIds = new Set();
 		showBranchDialog = false;
 	}
 
@@ -438,11 +118,6 @@
 			initializeFormState();
 		}
 		formInitKey = nextFormInitKey;
-	}
-
-	// Keep branch preview synced while branch dialog is open
-	$: if (showBranchDialog) {
-		queueBranchPreviewUpdate(title);
 	}
 
 	function handleSubmit() {
@@ -481,42 +156,24 @@
 		dispatch('cancel');
 	}
 
-	function handleAddAssignee() {
-		if (!newAssigneeName.trim()) return;
-
-		dispatch('addAssignee', {
-			name: newAssigneeName.trim(),
-			color: newAssigneeColor
-		});
-
-		newAssigneeName = '';
-		newAssigneeColor = '#6366F1';
-		showAddAssigneeForm = false;
+	function handleAddAssignee(event: CustomEvent<{ name: string; color: string }>) {
+		dispatch('addAssignee', event.detail);
 	}
 
-	function cancelAddAssignee() {
-		newAssigneeName = '';
-		newAssigneeColor = '#6366F1';
-		showAddAssigneeForm = false;
-	}
-
-	function getAssigneeById(id: number | null): Assignee | undefined {
-		return assignees.find(a => a.id === id);
-	}
-
-	function addAssigneeToTask() {
-		if (assignee_id_to_add !== null && !assignee_ids.includes(assignee_id_to_add)) {
-			assignee_ids = [...assignee_ids, assignee_id_to_add];
-			assignee_id_to_add = null;
+	function handleChecklistUpdate(event: CustomEvent<{ checklist: ChecklistItem[] }>) {
+		checklist = event.detail.checklist;
+		if (editingTask) {
+			dispatch('checklistUpdate', { checklist });
 		}
 	}
 
-	function removeAssigneeFromTask(id: number) {
-		assignee_ids = assignee_ids.filter(assigneeId => assigneeId !== id);
+	function openBranchDialog() {
+		showBranchDialog = true;
 	}
 
-	$: selectedAssignees = assignee_ids.map(id => getAssigneeById(id)).filter(Boolean) as Assignee[];
-	$: availableAssignees = assignees.filter(a => a.id && !assignee_ids.includes(a.id));
+	function closeBranchDialog() {
+		showBranchDialog = false;
+	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
@@ -536,12 +193,6 @@
 		if (browser) {
 			document.removeEventListener('keydown', handleKeydown);
 		}
-		clearBranchDebounceTimer();
-		clearCopyFeedbackTimer();
-		if (translator?.destroy) {
-			translator.destroy();
-		}
-		translator = null;
 	});
 </script>
 
@@ -669,485 +320,61 @@
 				</div>
 
 				<!-- Assignee Section -->
-				<div>
-					<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-						<User size={14} />
-						{$_('taskForm__assignee_label')}
-					</label>
-
-					{#if showAddAssigneeForm}
-						<div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg space-y-3">
-							<div>
-								<label for="new-assignee-name" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">{$_('taskForm__new_assignee_name')}</label>
-								<input
-									id="new-assignee-name"
-									type="text"
-									bind:value={newAssigneeName}
-									placeholder={$_('taskForm__new_assignee_placeholder')}
-									class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm dark:bg-gray-700 dark:text-white"
-								/>
-							</div>
-							<div>
-								<label for="new-assignee-color-picker" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">{$_('taskForm__color_label')}</label>
-								<div class="flex flex-wrap gap-1.5 mb-2">
-									{#each colorOptions as color}
-										<button
-											type="button"
-											on:click={() => newAssigneeColor = color}
-											aria-label={$_('taskForm__select_color', { values: { color } })}
-											class="w-6 h-6 rounded-full border-2 transition-all {newAssigneeColor === color ? 'border-gray-800 dark:border-white scale-110' : 'border-transparent hover:scale-105'}"
-											style="background-color: {color}"
-										></button>
-									{/each}
-								</div>
-								<input
-									id="new-assignee-color-picker"
-									type="color"
-									bind:value={newAssigneeColor}
-									class="w-10 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600"
-								/>
-								<input
-									type="text"
-									bind:value={newAssigneeColor}
-									placeholder="#6366F1"
-									class="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none dark:bg-gray-700 dark:text-white"
-									maxlength="7"
-								/>
-							</div>
-						</div>
-						<div class="flex gap-2 pt-1">
-							<button
-								type="button"
-								on:click={handleAddAssignee}
-								disabled={!newAssigneeName.trim()}
-								class="flex-1 bg-primary hover:bg-primary-dark disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white py-1.5 px-3 rounded-lg text-sm font-medium transition-colors"
-							>
-								{$_('taskForm__btn_add')}
-							</button>
-							<button
-								type="button"
-								on:click={cancelAddAssignee}
-								class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-							>
-								{$_('taskForm__btn_cancel')}
-							</button>
-						</div>
-					{:else}
-						<!-- Show selected assignees as badges -->
-						{#if selectedAssignees.length > 0}
-							<div class="flex flex-wrap gap-2 mb-2">
-								{#each selectedAssignees as assignee (assignee.id)}
-									<div class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-										<span class="w-2.5 h-2.5 rounded-full" style="background-color: {assignee.color}"></span>
-										<span class="text-gray-700 dark:text-gray-300">{assignee.name}</span>
-										<button
-											type="button"
-											on:click={() => removeAssigneeFromTask(assignee.id!)}
-											class="text-gray-400 hover:text-red-500 transition-colors"
-											title="Remove assignee"
-										>
-											<X size={14} />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-
-						<!-- Add assignee dropdown -->
-						<div class="flex gap-2">
-							<div class="flex-1">
-								<SearchableSelect
-									bind:value={assignee_id_to_add}
-									options={[
-										{ value: null, label: $_('taskForm__assignee_placeholder') },
-										...availableAssignees
-										.filter((assignee): assignee is typeof assignee & { id: number } => assignee.id !== undefined)
-										.map(assignee => ({
-											value: assignee.id,
-											label: assignee.name,
-											badge: true,
-											badgeColor: assignee.color
-										}))
-									]}
-									placeholder={$_('taskForm__assignee_placeholder')}
-								/>
-							</div>
-							<button
-								type="button"
-								on:click={addAssigneeToTask}
-								disabled={assignee_id_to_add === null}
-								class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-								title="Add selected assignee"
-							>
-								<Plus size={16} />
-							</button>
-							<button
-								type="button"
-								on:click={() => showAddAssigneeForm = true}
-								class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
-								title={$_('taskForm__add_assignee')}
-							>
-								<User size={16} />
-								<Plus size={12} />
-							</button>
-						</div>
-					{/if}
-				</div>
+				<AssigneeSelector
+					{assignees}
+					bind:assignee_ids
+					on:addAssignee={handleAddAssignee}
+				/>
 
 				<!-- Checklist Section -->
-				<div class="space-y-4">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<ListTodo size={18} class="text-gray-700 dark:text-gray-300" />
-							<span class="text-sm font-bold text-gray-900 dark:text-white">{$_('taskForm__checklist_label')}</span>
-						</div>
-						{#if checklist.length > 0}
-							<div class="flex items-center gap-1">
-								<button 
-									type="button"
-									on:click={() => {
-										checklistSelectMode = !checklistSelectMode;
-										if (!checklistSelectMode) selectedChecklistIds = new Set();
-									}}
-									class="px-2.5 py-1 text-xs font-medium rounded transition-colors {checklistSelectMode ? 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800'}"
-								>
-									{checklistSelectMode ? 'Done' : 'Select'}
-								</button>
-								<button 
-									type="button"
-									on:click={() => { checklist = []; selectedChecklistIds = new Set(); checklistSelectMode = false; if (editingTask) dispatch('checklistUpdate', { checklist }); }}
-									class="px-2.5 py-1 text-xs font-medium text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-								>
-									Delete All
-								</button>
-							</div>
-						{/if}
-					</div>
+				<ChecklistManager
+					bind:checklist
+					autoDispatch={!!editingTask}
+					on:update={handleChecklistUpdate}
+				/>
 
-					{#if checklistSelectMode && checklist.length > 0}
-						<div class="flex items-center gap-2 py-1 px-1 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-							<button
-								type="button"
-								on:click={() => {
-									if (selectedChecklistIds.size === checklist.length) {
-										selectedChecklistIds = new Set();
-									} else {
-										selectedChecklistIds = new Set(checklist.map(i => i.id));
-									}
-								}}
-								class="px-2.5 py-1 text-xs font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-							>
-								{selectedChecklistIds.size === checklist.length ? 'Deselect All' : 'Select All'}
-							</button>
-							{#if selectedChecklistIds.size > 0}
-								<button
-									type="button"
-									on:click={() => {
-										checklist = checklist.filter(i => !selectedChecklistIds.has(i.id));
-										selectedChecklistIds = new Set();
-										if (checklist.length === 0) checklistSelectMode = false;
-										if (editingTask) dispatch('checklistUpdate', { checklist });
-									}}
-									class="px-2.5 py-1 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors flex items-center gap-1"
-								>
-									<Trash2 size={12} />
-									Delete {selectedChecklistIds.size} items
-								</button>
-							{/if}
-							<span class="text-xs text-gray-400 ml-auto">{selectedChecklistIds.size}/{checklist.length}</span>
-						</div>
-					{/if}
-
-					<div class="space-y-2">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold w-6 {progress === 100 ? 'text-green-500' : 'text-blue-500'}">{progress}%</span>
-							<div class="flex-1 h-1 bg-gray-200 dark:bg-gray-700/50 rounded-full overflow-hidden">
-								<div 
-									class="h-full transition-all duration-500 {progress === 100 ? 'bg-green-500' : 'bg-blue-500'}" 
-									style="width: {progress}%"
-								></div>
-							</div>
-						</div>
-					</div>
-
-					<div class="space-y-1">
-						{#each visibleChecklist as item (item.id)}
-							<div class="flex items-start gap-2 group py-1 {checklistSelectMode && selectedChecklistIds.has(item.id) ? 'bg-blue-50/50 dark:bg-blue-900/10 -mx-2 px-2 rounded' : ''}">
-								{#if checklistSelectMode}
-									<button
-										type="button"
-										on:click={() => {
-											const next = new Set(selectedChecklistIds);
-											if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
-											selectedChecklistIds = next;
-										}}
-										class="mt-0.5 w-5 h-5 flex items-center justify-center rounded border transition-colors flex-shrink-0 {selectedChecklistIds.has(item.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'}"
-									>
-										{#if selectedChecklistIds.has(item.id)}
-											<Check size={14} strokeWidth={3} class="text-white" />
-										{/if}
-									</button>
-								{:else}
-									<button 
-										type="button"
-										on:click={() => toggleChecklistItem(item.id)}
-										class="mt-0.5 w-5 h-5 flex items-center justify-center rounded border border-gray-300 dark:border-gray-600 hover:border-primary transition-colors flex-shrink-0"
-									>
-										{#if item.completed}
-											<Check size={14} strokeWidth={3} class="text-primary" />
-										{/if}
-									</button>
-								{/if}
-								<div class="flex-1 min-w-0">
-									<input 
-										type="text"
-										bind:value={item.text}
-										on:change={() => editingTask && dispatch('checklistUpdate', { checklist })}
-										class="w-full bg-transparent border-none focus:ring-0 text-sm p-0 font-medium {item.completed ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-gray-200'}"
-									/>
-								</div>
-								{#if deletingChecklistItemId === item.id}
-									<button 
-										type="button"
-										on:click={() => { removeChecklistItem(item.id); deletingChecklistItemId = null; }}
-										class="p-1 text-green-500 hover:text-green-600 transition-colors"
-										title="Confirm delete"
-									>
-										<Check size={14} strokeWidth={3} />
-									</button>
-									<button 
-										type="button"
-										on:click={() => deletingChecklistItemId = null}
-										class="p-1 text-red-500 hover:text-red-600 transition-colors"
-										title="Cancel"
-									>
-										<X size={14} strokeWidth={3} />
-									</button>
-								{:else}
-									<button 
-										type="button"
-										on:click={() => deletingChecklistItemId = item.id}
-										class="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-									>
-										<Trash2 size={14} />
-									</button>
-								{/if}
-							</div>
-						{/each}
-					</div>
-
-					{#if hasMoreChecklist}
-						<button
-							type="button"
-							on:click={() => checklistVisibleCount += 10}
-							class="w-full py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-						>
-							ดูเพิ่มอีก {Math.min(10, checklist.length - checklistVisibleCount)} รายการ ({checklistVisibleCount}/{checklist.length})
-						</button>
-					{/if}
-
-					{#if !isAddingChecklistItem}
-						<button 
-							type="button"
-							on:click={() => isAddingChecklistItem = true}
-							class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors w-fit shadow-sm"
-						>
-							Add an item
-						</button>
-					{:else}
-						<div class="space-y-3 pt-1">
-							<input 
-								type="text"
-								bind:value={newChecklistItem}
-								on:keydown={(e) => {
-									if (e.key === 'Enter') {
-										e.preventDefault();
-										const itemToAdd = newChecklistItem.trim();
-										if (itemToAdd) {
-											addChecklistItem();
-											// Keep it open to add more? Or close? 
-											// User screenshot shows Add/Cancel, usually means "one at a time" or "keep open".
-											// Let's keep it open but clear input.
-										} else {
-											isAddingChecklistItem = false;
-										}
-									} else if (e.key === 'Escape') {
-										isAddingChecklistItem = false;
-										newChecklistItem = '';
-									}
-								}}
-								placeholder="Add an item"
-								class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-950 border-2 border-primary/50 rounded-md focus:border-primary outline-none transition-all text-gray-900 dark:text-white"
-								autofocus
-							/>
-							<div class="flex items-center gap-3">
-								<button 
-									type="button"
-									on:click={() => {
-										if (newChecklistItem.trim()) {
-											addChecklistItem();
-										} else {
-											isAddingChecklistItem = false;
-										}
-									}}
-									class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold rounded-md transition-colors shadow-sm"
-								>
-									Add
-								</button>
-								<button 
-									type="button"
-									on:click={() => {
-										isAddingChecklistItem = false;
-										newChecklistItem = '';
-									}}
-									class="px-2 py-1.5 text-gray-700 dark:text-gray-300 text-sm font-bold hover:underline transition-colors"
-								>
-									Cancel
-								</button>
-							</div>
-						</div>
-					{/if}
+				<!-- Notes -->
+				<div>
+					<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+						<FileText size={14} />
+						{$_('taskForm__notes_label')}
+					</label>
+					<MarkdownEditor
+						bind:value={notes}
+						placeholder={$_('taskForm__notes_placeholder')}
+						rows={4}
+					/>
 				</div>
 
-		<!-- Notes -->
-		<div>
-			<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-				<FileText size={14} />
-				{$_('taskForm__notes_label')}
-			</label>
-			<MarkdownEditor
-				bind:value={notes}
-				placeholder={$_('taskForm__notes_placeholder')}
-				rows={4}
-			/>
-		</div>
-
-		</div>
-
-		<!-- Buttons -->
-		<div class="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
-			<button
-				type="button"
-				on:click={handleClose}
-				class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
-			>
-				{$_('taskForm__btn_cancel')}
-			</button>
-			<button
-				type="submit"
-				class="flex-1 bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-lg font-medium transition-colors"
-			>
-				{editingTask ? $_('taskForm__btn_save') : $_('taskForm__btn_add')}
-			</button>
-		</div>
-	</form>
-		</div>
-	</div>
-
-	{#if showBranchDialog}
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
-			<!-- svelte-ignore a11y-no-static-element-interactions -->
-			<div
-				class="fixed inset-0 bg-black/40 flex items-center justify-center z-70 p-4"
-				on:click|self={closeBranchDialog}
-			>
-				<div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
-					<div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h3 class="text-base font-semibold text-gray-800 dark:text-white flex items-center gap-2">
-							<GitBranch size={18} class="text-primary" />
-							สร้างชื่อ Branch
-						</h3>
-						<button
-							type="button"
-							on:click={closeBranchDialog}
-							class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-						>
-							<X size={18} />
-						</button>
-					</div>
-
-					<div class="px-5 py-4 space-y-3">
-						<div>
-								<label for="branch-task-title" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Task Title</label>
-								<input
-									id="branch-task-title"
-									type="text"
-									value={title}
-								readonly
-								class="w-full h-10 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-200 text-sm"
-							/>
-						</div>
-
-						<div>
-								<label for="git-flow-prefix" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Git Flow Prefix</label>
-								<select
-									id="git-flow-prefix"
-									bind:value={gitFlowType}
-								class="w-full h-10 px-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-							>
-								{#each gitFlowTypes as flow}
-									<option value={flow}>{flow}</option>
-								{/each}
-							</select>
-						</div>
-
-						<div>
-								<label for="branch-name-preview" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Branch Name</label>
-								<div class="flex gap-2">
-									<input
-										id="branch-name-preview"
-										type="text"
-									value={branchName}
-									readonly
-									on:focus={(event) => (event.currentTarget as HTMLInputElement).select()}
-									class="flex-1 h-10 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 font-mono text-sm"
-								/>
-								<button
-									type="button"
-									on:click={handleCopyBranchName}
-									disabled={!title.trim() || isTranslatingBranch}
-									class="h-10 px-3 inline-flex items-center gap-1.5 bg-primary hover:bg-primary-dark disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
-									title="คัดลอกชื่อ branch"
-								>
-									{#if copySucceeded}
-										<Check size={15} />
-										Copied
-									{:else}
-										<Copy size={15} />
-										Copy
-									{/if}
-								</button>
-							</div>
-						</div>
-
-						<div class="text-xs {getBranchMessageClass()}">
-							{#if !title.trim()}
-								กรอกชื่องานก่อน เพื่อสร้างชื่อ branch อัตโนมัติ
-							{:else if isTranslatingBranch}
-								กำลังแปลชื่อ task เป็นภาษาอังกฤษ...
-							{:else}
-								<span class="text-gray-500 dark:text-gray-400">
-									ชื่ออังกฤษ: <span class="font-medium text-gray-700 dark:text-gray-200">{translatedTitle || '-'}</span>
-								</span>
-								<span class="mx-1 text-gray-400">•</span>
-								<span>{branchMessage}</span>
-							{/if}
-						</div>
-					</div>
-
-					<div class="px-5 pb-4 flex justify-end">
-						<button
-							type="button"
-							on:click={closeBranchDialog}
-							class="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
-						>
-							ปิด
-						</button>
-					</div>
 				</div>
+
+				<!-- Buttons -->
+				<div class="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
+					<button
+						type="button"
+						on:click={handleClose}
+						class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+					>
+						{$_('taskForm__btn_cancel')}
+					</button>
+					<button
+						type="submit"
+						class="flex-1 bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-lg font-medium transition-colors"
+					>
+						{editingTask ? $_('taskForm__btn_save') : $_('taskForm__btn_add')}
+					</button>
+				</div>
+			</form>
 			</div>
-		{/if}
+		</div>
 	</div>
+
+	<!-- Branch Dialog -->
+	<BranchDialog
+		bind:show={showBranchDialog}
+		{title}
+		on:close={closeBranchDialog}
+	/>
 {/if}
 
 <style>
