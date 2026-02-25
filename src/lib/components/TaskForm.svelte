@@ -174,6 +174,8 @@
 		}
 	}
 
+	
+
 	function openBranchDialog() {
 		showBranchDialog = true;
 	}
